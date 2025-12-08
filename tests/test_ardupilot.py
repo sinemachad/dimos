@@ -29,6 +29,7 @@ def test_imports():
 
     try:
         import numpy as np
+
         print("✓ NumPy imported successfully")
     except ImportError as e:
         print(f"✗ NumPy import failed: {e}")
@@ -36,6 +37,7 @@ def test_imports():
 
     try:
         from pymavlink import mavutil
+
         print("✓ pymavlink imported successfully")
         print(f"  Version: {mavutil.VERSION if hasattr(mavutil, 'VERSION') else 'Unknown'}")
     except ImportError as e:
@@ -46,6 +48,7 @@ def test_imports():
     try:
         from reactivex import interval
         from reactivex import operators as ops
+
         print("✓ ReactiveX imported successfully")
     except ImportError as e:
         print(f"✗ ReactiveX import failed: {e}")
@@ -54,6 +57,7 @@ def test_imports():
 
     try:
         from dimos.core import Module, Out, In, rpc
+
         print("✓ DIMOS core imported successfully")
     except ImportError as e:
         print(f"✗ DIMOS core import failed: {e}")
@@ -61,6 +65,7 @@ def test_imports():
 
     try:
         from dimos.hardware.ardupilot import ArduPilotModule, ArduPilotInterface
+
         print("✓ ArduPilot module imported successfully")
     except ImportError as e:
         print(f"✗ ArduPilot module import failed: {e}")
@@ -71,6 +76,7 @@ def test_imports():
         from dimos_lcm.sensor_msgs import NavSatFix, NavSatStatus, Imu
         from dimos_lcm.nav_msgs import Odometry, Path
         from dimos_lcm.geometry_msgs import PoseStamped, Twist
+
         print("✓ Standard LCM messages imported successfully")
     except ImportError as e:
         print(f"✗ Standard LCM messages import failed: {e}")
@@ -79,6 +85,7 @@ def test_imports():
     # Test optional MAVROS messages
     try:
         from dimos_lcm.mavros_msgs import State, ExtendedState, ActuatorControl
+
         print("✓ MAVROS LCM messages imported successfully")
     except ImportError as e:
         print(f"⚠️  MAVROS LCM messages not available: {e}")
@@ -93,10 +100,10 @@ def test_hardware_detection():
 
     # Common ArduPilot device paths
     device_patterns = [
-        "/dev/ttyACM*",    # USB ACM devices
-        "/dev/ttyUSB*",    # USB serial devices
+        "/dev/ttyACM*",  # USB ACM devices
+        "/dev/ttyUSB*",  # USB serial devices
         "/dev/cu.usbmodem*",  # macOS
-        "/dev/cu.usbserial*", # macOS
+        "/dev/cu.usbserial*",  # macOS
     ]
 
     found_devices = []
@@ -125,12 +132,13 @@ def test_hardware_detection():
     print("\nChecking for SITL option:")
     try:
         import socket
+
         # Test if we can connect to common SITL ports
         sitl_addresses = [
             ("127.0.0.1", 14550),  # UDP SITL
-            ("127.0.0.1", 5760),   # TCP SITL
+            ("127.0.0.1", 5760),  # TCP SITL
         ]
-        
+
         for addr, port in sitl_addresses:
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -167,13 +175,13 @@ def test_basic_functionality():
         print("✓ DIMOS core started successfully")
 
         # Deploy ArduPilot module
-        ardupilot = dimos.deploy(ArduPilotModule, 
-                                connection_string='/dev/ttyACM0',
-                                publish_rate=10.0)
+        ardupilot = dimos.deploy(
+            ArduPilotModule, connection_string="/dev/ttyACM0", publish_rate=10.0
+        )
         print("✓ ArduPilotModule deployed successfully")
 
         # Test that module has expected outputs
-        expected_outputs = ['global_position', 'local_odom', 'mission_waypoints']
+        expected_outputs = ["global_position", "local_odom", "mission_waypoints"]
         for output in expected_outputs:
             if hasattr(ardupilot, output):
                 print(f"  ✓ {output} output available")
@@ -183,9 +191,15 @@ def test_basic_functionality():
 
         # Configure LCM transports (this tests the transport system)
         try:
-            ardupilot.global_position.transport = core.LCMTransport("/mavros/global_position/global", NavSatFix)
-            ardupilot.local_odom.transport = core.LCMTransport("/mavros/local_position/odom", Odometry)
-            ardupilot.mission_waypoints.transport = core.LCMTransport("/mavros/mission/waypoints", Path)
+            ardupilot.global_position.transport = core.LCMTransport(
+                "/mavros/global_position/global", NavSatFix
+            )
+            ardupilot.local_odom.transport = core.LCMTransport(
+                "/mavros/local_position/odom", Odometry
+            )
+            ardupilot.mission_waypoints.transport = core.LCMTransport(
+                "/mavros/mission/waypoints", Path
+            )
             print("✓ LCM transports configured successfully")
         except Exception as e:
             print(f"✗ LCM transport configuration failed: {e}")
@@ -195,7 +209,7 @@ def test_basic_functionality():
         if MAVROS_MSGS_AVAILABLE:
             print("✓ MAVROS messages available - extended functionality enabled")
             # Test optional MAVROS outputs
-            mavros_outputs = ['state', 'extended_state', 'rc_in', 'rc_out']
+            mavros_outputs = ["state", "extended_state", "rc_in", "rc_out"]
             mavros_available = 0
             for output in mavros_outputs:
                 if hasattr(ardupilot, output):
@@ -219,6 +233,7 @@ def test_basic_functionality():
     except Exception as e:
         print(f"✗ Basic functionality test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -230,38 +245,38 @@ def test_connection_attempt(devices):
 
     print("\nTesting connection (optional)...")
     print("This will attempt to connect to detected devices")
-    
+
     # Ask user if they want to test connection
     response = input("Attempt connection test? [y/N]: ").lower().strip()
-    if response != 'y':
+    if response != "y":
         print("Skipping connection test")
         return True
 
     from dimos.hardware.ardupilot import ArduPilotInterface
-    
+
     for device in devices:
         print(f"\nTesting connection to {device}...")
         try:
             interface = ArduPilotInterface(connection_string=device)
-            
+
             # Try to connect with timeout
             if interface.connect():
                 print(f"✓ Successfully connected to {device}")
-                
+
                 # Test heartbeat
                 interface.send_heartbeat()
                 print("✓ Heartbeat sent successfully")
-                
+
                 # Disconnect
                 interface.disconnect()
                 print("✓ Disconnected successfully")
                 return True
             else:
                 print(f"✗ Failed to connect to {device}")
-                
+
         except Exception as e:
             print(f"✗ Connection test failed for {device}: {e}")
-    
+
     print("⚠️  No successful connections")
     return False
 
