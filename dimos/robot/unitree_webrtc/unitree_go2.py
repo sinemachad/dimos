@@ -26,7 +26,7 @@ from go2_webrtc_driver.constants import VUI_COLOR
 from go2_webrtc_driver.webrtc_driver import WebRTCConnectionMethod
 from dimos.perception.person_tracker import PersonTrackingStream
 from dimos.perception.object_tracker import ObjectTrackingStream
-from dimos.robot.local_planner.local_planner import navigate_path_local
+from dimos.robot.local_planner.local_planner import BaseLocalPlanner
 from dimos.robot.local_planner.vfh_local_planner import VFHPurePursuitPlanner
 from dimos.types.robot_capabilities import RobotCapability
 from dimos.types.vector import Vector

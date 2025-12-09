@@ -101,11 +101,12 @@ class FakeRTC(UnitreeWebRTCConnection):
         print("move supressed", vector)
 
 
-class ConnectionModule(FakeRTC, Module):
+class ConnectionModule(UnitreeWebRTCConnection, Module):
     movecmd: In[Vector3] = None
     odom: Out[Vector3] = None
     lidar: Out[LidarMessage] = None
     video: Out[VideoMessage] = None
+    costmap_image: Out[Image] = None
     ip: str
 
     _odom: Callable[[], Odometry]
@@ -138,6 +139,11 @@ class ConnectionModule(FakeRTC, Module):
         self._odom = getter_streaming(self.odom_stream())
         self._lidar = getter_streaming(self.lidar_stream())
 
+        # Start publishing local costmap as image at 2 Hz
+        from reactivex import interval
+
+        interval(0.5).subscribe(lambda _: self._publish_local_costmap_image())
+
     @rpc
     def get_local_costmap(self) -> Costmap:
         return self._lidar().costmap()
@@ -149,6 +155,18 @@ class ConnectionModule(FakeRTC, Module):
     @rpc
     def get_pos(self) -> Vector:
         return self._odom().position
+
+    def _publish_local_costmap_image(self):
+        """Convert local costmap to image and publish it."""
+        try:
+            costmap = self.get_local_costmap()
+            if costmap is not None:
+                # Convert costmap to image message with grid lines
+                image_msg = costmap.to_image_msg(add_grid_lines=True, grid_spacing=10)
+                self.costmap_image.publish(image_msg)
+        except Exception as e:
+            # Silently ignore errors to avoid spamming logs
+            pass
 
 
 class ControlModule(Module):
@@ -220,6 +238,8 @@ class UnitreeGo2Light:
         self.connection.odom.transport = core.LCMTransport("/odom", PoseStamped)
         # OUTPUT: Camera video frames to /video topic
         self.connection.video.transport = core.LCMTransport("/video", Image)
+        # OUTPUT: Local costmap as image to /local_costmap_image topic
+        self.connection.costmap_image.transport = core.LCMTransport("/local_costmap_image", Image)
         # ======================================================================
         # self.connection.tf.transport = core.LCMTransport("/tf", LidarMessage)
 
@@ -443,7 +463,7 @@ async def run_light_robot():
     pose = robot.get_pose()
     print(f"Robot position: {pose['position']}")
     print(f"Robot rotation: {pose['rotation']}")
-    robot.explore()
+    # robot.explore()
     # Keep the program running
     while True:
         await asyncio.sleep(1)

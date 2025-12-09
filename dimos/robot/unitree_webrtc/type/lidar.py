@@ -122,7 +122,7 @@ class LidarMessage(PointCloud2):
             inflate_radius_m = 1.0 * voxel_size if voxel_size > self.resolution else 0.0
             grid, origin_xy = pointcloud_to_costmap(
                 down_sampled_pointcloud,
-                resolution=self.resolution,
+                resolution=voxel_size,
                 inflate_radius_m=inflate_radius_m,
             )
             self._costmap = Costmap(grid=grid, origin=[*origin_xy, 0.0], resolution=self.resolution)

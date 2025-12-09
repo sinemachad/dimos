@@ -24,6 +24,11 @@ import open3d as o3d
 from matplotlib.path import Path
 from PIL import Image
 import cv2
+import logging
+from dimos.utils.logging_config import setup_logger
+from dimos.msgs.sensor_msgs import Image as ImageMsg
+
+logger = setup_logger("dimos.robot.unitree_webrtc.multiprocess.unitree_go2", level=logging.INFO)
 
 DTYPE2STR = {
     np.float32: "f32",
@@ -438,6 +443,55 @@ class Costmap:
         img.save(image_path, "JPEG", quality=95)
         print(f"Costmap image saved to: {image_path}")
 
+    def to_image_msg(self, add_grid_lines: bool = False, grid_spacing: int = 10) -> ImageMsg:
+        """
+        Convert costmap to an Image message for publishing via LCM.
+
+        Args:
+            add_grid_lines: Whether to add grid lines for visualization
+            grid_spacing: Grid line spacing in cells (default 10 = 0.5m at 0.05m resolution)
+
+        Returns:
+            ImageMsg: The costmap as an image message
+        """
+        # Create image array (height, width, 3 for RGB)
+        img_array = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        # just convert grid from grayscale to rgb
+        img_array = self.grid.astype(np.uint8)
+        img_array = cv2.cvtColor(img_array, cv2.COLOR_GRAY2RGB)
+        # # Apply ROS-style coloring based on costmap values
+        # for i in range(self.height):
+        #     for j in range(self.width):
+        #         value = self.grid[i, j]
+        #         if value == CostValues.FREE:  # Free space = light grey
+        #             img_array[i, j] = [205, 205, 205]
+        #         elif value == CostValues.UNKNOWN:  # Unknown = dark gray
+        #             img_array[i, j] = [128, 128, 128]
+        #         elif value >= CostValues.OCCUPIED:  # Occupied/obstacles = black
+        #             img_array[i, j] = [0, 0, 0]
+        #         else:  # Any other values (low cost) = gradient from light grey to yellow
+        #             # Scale cost value to color gradient
+        #             intensity = int(205 - (value / 100.0) * 100)
+        #             img_array[i, j] = [intensity, intensity, 205]
+
+        # Add origin marker (red cross)
+        origin_x = int(-self.origin.x / self.resolution)
+        origin_y = int(-self.origin.y / self.resolution)
+        if 0 <= origin_x < self.width and 0 <= origin_y < self.height:
+            # Draw a small red cross at origin
+            cross_size = 5
+            for i in range(-cross_size, cross_size + 1):
+                if 0 <= origin_x + i < self.width:
+                    img_array[origin_y, origin_x + i] = [255, 0, 0]
+                if 0 <= origin_y + i < self.height:
+                    img_array[origin_y + i, origin_x] = [255, 0, 0]
+
+        # Flip vertically to match ROS convention (origin at bottom-left)
+        img_array = np.flipud(img_array)
+
+        # Convert to Image message
+        return ImageMsg.from_numpy(img_array)
+
 
 def _inflate_lethal(costmap: np.ndarray, radius: int, lethal_val: int = 100) -> np.ndarray:
     """Return *costmap* with lethal cells dilated by *radius* grid steps (circular)."""
@@ -457,13 +511,23 @@ def _inflate_lethal(costmap: np.ndarray, radius: int, lethal_val: int = 100) -> 
     return out
 
 
+def generate_normal(elev: np.ndarray, blur_kernel: int = 3) -> np.ndarray:
+    dzdx = -cv2.Sobel(elev, cv2.CV_32F, 1, 0, ksize=blur_kernel)
+    dzdy = -cv2.Sobel(elev, cv2.CV_32F, 0, 1, ksize=blur_kernel)
+    dzdz = np.ones_like(elev)
+    normal = np.stack((dzdx, dzdy, dzdz), axis=2)
+    norm = np.linalg.norm(normal, axis=2, keepdims=True)
+    normal = normal / norm
+    return normal
+
+
 def pointcloud_to_costmap(
     pcd: o3d.geometry.PointCloud,
     *,
     resolution: float = 0.05,
     ground_z: float = 0.0,
     obs_min_height: float = 0.15,
-    max_height: Optional[float] = 0.5,
+    max_height: Optional[float] = 10.0,
     inflate_radius_m: Optional[float] = None,
     default_unknown: int = -1,
     cost_free: int = 0,
@@ -506,20 +570,37 @@ def pointcloud_to_costmap(
     np.maximum.at(z_max, lin, pts[:, 2])
     z_max = z_max.reshape(Ny, Nx)
 
+    # inpaint the z_max using cv2.inpaint and using the np.inf as the mask
+    # nan_mask = np.isinf(z_max).astype('uint8')
+    # z_max = np.nan_to_num(z_max, nan=0, posinf=0, neginf=0) * 255.0  # Convert inf/nan to 0
+    # # z_max = cv2.medianBlur(z_max, 3)
+    # z_max = cv2.inpaint(z_max, nan_mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+    # z_max = z_max / 255.0
+    # z_max = cv2.GaussianBlur(z_max, (1, 1), 0)
+    # z_max = cv2.GaussianBlur(z_max, (1, 1), 0)
+    # Get me smoothened surface normals from the heightmap:
+    z_max = np.clip(z_max, -1, 1)
+    normal = generate_normal(z_max, blur_kernel=1)
+
     # 3. Cost rules -----------------------------------------------------------
     costmap = np.full_like(z_max, default_unknown, np.int8)
     known = z_max != -np.inf
     costmap[known] = cost_free
 
-    lethal = z_max >= (ground_z + obs_min_height)
+    # lethal = z_max >= (ground_z + obs_min_height)
+    lethal = normal[..., 2] < np.cos(np.radians(45))
     costmap[lethal] = cost_lethal
 
     # 4. Optional inflation ----------------------------------------------------
-    if inflate_radius_m and inflate_radius_m > 0:
-        cells = int(np.ceil(inflate_radius_m / resolution))
-        costmap = _inflate_lethal(costmap, cells, lethal_val=cost_lethal)
-
-    return costmap, origin.astype(np.float32)
+    # if inflate_radius_m and inflate_radius_m > 0:
+    #     cells = int(np.ceil(inflate_radius_m / resolution))
+    #     costmap = _inflate_lethal(costmap, cells, lethal_val=cost_lethal)
+    # cv2.imshow("costmap", costmap)
+    # cv2.waitKey(1)
+    # z_max = cv2.GaussianBlur(z_max, (1, 1), 0)
+    return (normal[..., 2] * 127).astype(np.uint8), origin.astype(
+        np.float32
+    )  # , heightmap, normal # TODO: add heightmap and normal
 
 
 if __name__ == "__main__":
