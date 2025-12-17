@@ -44,7 +44,7 @@ logger = setup_logger("dimos.protocol.pubsub.sharedmemory")
 
 @dataclass
 class SharedMemoryConfig:
-    prefer: str = "auto"  # "auto" | "cpu"  (DIMOS_IPC_BACKEND overrides), TODO: "cuda"
+    prefer: str = "auto"  # "auto" | "cuda" | "cpu"  (DIMOS_IPC_BACKEND overrides)
     default_capacity: int = 3686400  # payload bytes (excludes 4-byte header)
     close_channels_on_stop: bool = True
 
@@ -79,12 +79,13 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
             "shape",
             "dtype",
             "capacity",
+            "is_cuda",
             "cp",
             "last_local_payload",
             "suppress_counts",
         )
 
-        def __init__(self, channel, capacity: int, cp_mod):
+        def __init__(self, channel, capacity: int, is_cuda: bool, cp_mod):
             self.channel = channel
             self.capacity = int(capacity)
             self.shape = (self.capacity + 4,)  # +4 for uint32 length header
@@ -93,7 +94,7 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
             self.stop = threading.Event()
             self.thread: Optional[threading.Thread] = None
             self.last_seq = 0  # start at 0 to avoid b"" on first poll
-            # TODO: implement an initializer variable for is_cuda once CUDA IPC is in
+            self.is_cuda = is_cuda
             self.cp = cp_mod
             self.last_local_payload: Optional[bytes] = None
             self.suppress_counts = defaultdict(int)
@@ -175,7 +176,16 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
         if L:
             host[4 : 4 + L] = np.frombuffer(memoryview(payload_bytes), dtype=np.uint8)
 
-        st.channel.publish(host)
+        # Publish to channel (CUDA if available)
+        if st.is_cuda:
+            try:
+                d = st.cp.asarray(host)  # type: ignore[attr-defined]
+                st.channel.publish(d)
+            except Exception:
+                st.channel.publish(host)
+        else:
+            st.channel.publish(host)
+
 
     def subscribe(self, topic: str, callback: Callable[[bytes, str], Any]) -> Callable[[], None]:
         """Subscribe a callback(message: bytes, topic). Returns unsubscribe."""
@@ -245,7 +255,10 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
             st = self._topics.get(topic)
             if st is not None:
                 return st
+
+            prefer = (os.getenv("DIMOS_IPC_BACKEND") or self.config.prefer or "auto").lower()
             cap = int(self.config.default_capacity)
+            dtype = np.uint8
 
             def _names_for_topic(topic: str, capacity: int) -> tuple[str, str]:
                 # Python’s SharedMemory requires names without a leading '/'
@@ -253,8 +266,25 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
                 return f"psm_{h}_data", f"psm_{h}_ctrl"
 
             data_name, ctrl_name = _names_for_topic(topic, cap)
-            ch = CpuShmChannel((cap + 4,), np.uint8, data_name=data_name, ctrl_name=ctrl_name)
-            st = SharedMemoryPubSubBase._TopicState(ch, cap, None)
+            is_cuda = False
+            cp_mod = None
+            if prefer in ("cuda", "auto"):
+                try:
+                    import cupy as cp  # type: ignore
+                    from dimos.protocol.pubsub.shm.ipc_factory import CudaIpcChannel
+
+                    ch = CudaIpcChannel((cap + 4,), np.uint8)
+                    is_cuda = True
+                    cp_mod = cp
+                    logger.info("SharedMemory using CUDA backend")
+                except Exception as e:
+                    ch = CpuShmChannel((cap + 4,), np.uint8, data_name=data_name, ctrl_name=ctrl_name)
+                    logger.info(f"SharedMemory falling back to CPU backend due to exception: {e}")
+            else:
+                ch = CpuShmChannel((cap + 4,), np.uint8, data_name=data_name, ctrl_name=ctrl_name)
+                logger.info("SharedMemory using CPU backend")
+
+            st = SharedMemoryPubSubBase._TopicState(ch, cap, is_cuda, cp_mod)
             self._topics[topic] = st
             return st
 
@@ -266,7 +296,14 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
                 continue
             st.last_seq = seq
 
-            host = np.array(view, copy=True)
+            # Host view
+            if st.is_cuda:
+                try:
+                    host = st.cp.asnumpy(view)  # type: ignore[attr-defined]
+                except Exception:
+                    host = np.array(view, copy=True)
+            else:
+                host = np.array(view, copy=True)
 
             try:
                 L = struct.unpack("<I", host[:4].tobytes())[0]
