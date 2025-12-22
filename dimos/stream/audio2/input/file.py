@@ -65,19 +65,8 @@ class FileInputNode(GStreamerSourceBase):
 
     def _configure_appsink(self):
         """Configure appsink with realtime option."""
-        self._appsink.set_property("emit-signals", True)
-        self._appsink.set_property("sync", self.config.realtime)  # Sync to clock if realtime
-
-        # Apply any custom properties
-        if hasattr(self.config, "properties") and self.config.properties:
-            for prop, value in self.config.properties.items():
-                if prop in ["emit-signals", "sync"]:  # Skip already set properties
-                    continue
-                try:
-                    self._appsink.set_property(prop, value)
-                    logger.debug(f"Set appsink property {prop}={value}")
-                except Exception as e:
-                    logger.warning(f"Failed to set appsink property {prop}: {e}")
+        # Call base implementation with realtime parameter
+        super()._configure_appsink(sync=self.config.realtime)
 
     def _handle_eos(self):
         """Handle end of stream with looping support."""

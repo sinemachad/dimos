@@ -263,3 +263,29 @@ def validate_pipeline_element(pipeline: Gst.Pipeline, element_name: str) -> Gst.
     if not element:
         raise RuntimeError(f"Failed to get '{element_name}' from pipeline")
     return element
+
+
+def apply_gstreamer_properties(
+    element: Gst.Element,
+    properties: dict,
+    skip_properties: Optional[set] = None,
+    element_name: str = "element",
+) -> None:
+    """Apply properties to a GStreamer element with error handling.
+
+    Args:
+        element: GStreamer element to configure
+        properties: Dictionary of property name to value
+        skip_properties: Set of property names to skip (already set)
+        element_name: Name of element for logging
+    """
+    skip = skip_properties or set()
+
+    for prop, value in properties.items():
+        if prop in skip:
+            continue
+        try:
+            element.set_property(prop, value)
+            logger.debug(f"Set {element_name} property {prop}={value}")
+        except Exception as e:
+            logger.warning(f"Failed to set {element_name} property {prop}: {e}")

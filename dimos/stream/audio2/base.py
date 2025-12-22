@@ -43,6 +43,7 @@ from dimos.stream.audio2.utils import (
     parse_caps_to_spec,
     validate_pipeline_element,
     get_numpy_dtype_for_format,
+    apply_gstreamer_properties,
 )
 from dimos.utils.logging_config import setup_logger
 
@@ -125,21 +126,28 @@ class GStreamerSourceBase(GStreamerPipelineBase, ABC):
         # Set up bus for error/EOS handling
         self._setup_bus(self._pipeline)
 
-    def _configure_appsink(self):
-        """Configure appsink properties."""
+    def _configure_appsink(self, sync: Optional[bool] = None):
+        """Configure appsink properties.
+
+        Args:
+            sync: Whether to sync to clock. If None, uses False (default).
+                  Subclasses can override by passing realtime config value.
+        """
         self._appsink.set_property("emit-signals", True)
-        self._appsink.set_property("sync", False)  # Don't sync to clock
+
+        # Use sync parameter if provided, otherwise default to False
+        sync_value = sync if sync is not None else False
+        self._appsink.set_property("sync", sync_value)
+        logger.debug(f"Set appsink sync={sync_value}")
 
         # Apply any custom properties
         if hasattr(self.config, "properties") and self.config.properties:
-            for prop, value in self.config.properties.items():
-                if prop in ["emit-signals", "sync"]:  # Skip already set properties
-                    continue
-                try:
-                    self._appsink.set_property(prop, value)
-                    logger.debug(f"Set appsink property {prop}={value}")
-                except Exception as e:
-                    logger.warning(f"Failed to set appsink property {prop}: {e}")
+            apply_gstreamer_properties(
+                self._appsink,
+                self.config.properties,
+                skip_properties={"emit-signals", "sync"},
+                element_name="appsink"
+            )
 
     def _handle_eos(self):
         """Handle end of stream."""

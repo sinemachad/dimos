@@ -25,6 +25,7 @@ gi.require_version("Gst", "1.0")
 from dimos.stream.audio2.base import GStreamerSinkBase
 from dimos.stream.audio2.gstreamer import GStreamerNodeConfig
 from dimos.stream.audio2.types import AudioSink
+from dimos.stream.audio2.utils import apply_gstreamer_properties
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger("dimos.stream.audio2.output.soundcard")
@@ -114,12 +115,12 @@ class SoundcardOutputNode(GStreamerSinkBase):
 
             # Set any custom properties
             if self.config.properties:
-                for prop, value in self.config.properties.items():
-                    try:
-                        sink_to_configure.set_property(prop, value)
-                        logger.debug(f"Set {prop}={value}")
-                    except Exception as e:
-                        logger.warning(f"Failed to set property {prop}: {e}")
+                apply_gstreamer_properties(
+                    sink_to_configure,
+                    self.config.properties,
+                    skip_properties=set(),
+                    element_name="sink"
+                )
 
 
 def speaker(

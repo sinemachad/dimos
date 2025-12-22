@@ -13,3 +13,7 @@
 # limitations under the License.
 
 """Audio output modules."""
+
+from .soundcard import speaker
+
+__all__ = ["speaker"]

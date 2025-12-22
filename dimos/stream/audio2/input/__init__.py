@@ -13,3 +13,9 @@
 # limitations under the License.
 
 """Audio input modules."""
+
+from .file import file_input
+from .microphone import microphone
+from .signal import test_signal
+
+__all__ = ["file_input", "microphone", "test_signal"]
