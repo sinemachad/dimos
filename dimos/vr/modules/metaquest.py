@@ -298,10 +298,18 @@ class MetaQuestModule(Module):
                 if self._server_thread.is_alive():
                     logger.warning("Server thread did not stop gracefully")
 
+            # Cleanup camera disposables
+            for disposable in self._camera_disposables.values():
+                disposable.dispose()
+            self._camera_disposables.clear()
+            self._camera_queues.clear()
+
             logger.info("VR server stopped")
 
         except Exception as e:
             logger.error(f"Error stopping VR server: {e}", exc_info=True)
+        finally:
+            super().stop()
 
     @rpc
     def get_stats(self):
@@ -410,20 +418,6 @@ class MetaQuestModule(Module):
                     del self._camera_disposables[camera_key]
 
         return generate
-
-    def _close_module(self):
-        """Cleanup when module is closed."""
-        try:
-            # Cleanup camera disposables
-            for disposable in self._camera_disposables.values():
-                disposable.dispose()
-            self._camera_disposables.clear()
-            self._camera_queues.clear()
-
-            self.stop()
-        except:
-            pass
-        super()._close_module()
 
     def __str__(self):
         return f"MetaQuestModule(port={self.port}, running={self._running})"
