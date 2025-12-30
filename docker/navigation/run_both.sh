@@ -90,7 +90,7 @@ trap cleanup EXIT INT TERM
 # Start ROS route planner in background (in new process group)
 echo "Starting ROS route planner..."
 cd /ros2_ws/src/ros-navigation-autonomy-stack
-setsid bash -c './system_simulation_with_route_planner.sh' &
+setsid bash -c './system_real_robot_with_route_planner.sh' &
 ROS_PID=$!
 
 # Wait a bit for ROS to initialize

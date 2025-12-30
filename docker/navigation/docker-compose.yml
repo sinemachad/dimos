@@ -59,7 +59,7 @@ services:
     working_dir: /workspace/dimos
 
     # Command to run both ROS and DimOS
-    command: /usr/local/bin/run_both.sh
+    command: /usr/local/bin/run_both_simulation.sh
 
   # Hardware profile - for real robot
   dimos_hardware:
@@ -143,7 +143,7 @@ services:
     working_dir: /workspace/dimos
 
     # Command - for hardware, we run bash as the user will launch specific scripts
-    command: bash
+    command: /usr/local/bin/run_both.sh
 
     # Capabilities for hardware operations
     cap_add:
