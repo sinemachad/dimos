@@ -48,15 +48,13 @@ The result: cross-embodied *"Dimensional Applications"* exceptional at generaliz
 
 ## Installation
 
+<!--
 ```bash
-# TODO: Ideally, when this is released, this should be as simple as
+# TODO 2025.12.10: Ideally, when this is released, this should be as simple as
 # pip install dimos
-# I've commented out the installation instructions below
-# because I feel like the *user*-oriented instructions
-# should be simpler. But if we do want to just stick with these instructions, I can un-comment them (or maybe move them to a separate file and link to it).
 ```
-<!-- TODO: Add whatever other system deps are needed for users (as opposed to contributors) -->
-<!-- TODO: Move detailed installation to development.md or similar
+-->
+<!-- TODO 2025.12.10: Move detailed installation to development.md or similar -->
 ## Python Installation
 Tested on Ubuntu 22.04/24.04
 
@@ -98,9 +96,8 @@ cp default.env .env
 ```bash
 pytest -s dimos/
 ```
--->
 
-<!-- TODO: Move test commands to docs
+<!-- TODO 2025.12.10: Move test commands / runfile cmds to docs -->
 #### Test Dimensional with a replay UnitreeGo2 stream (no robot required)
 ```bash
 CONNECTION_TYPE=replay python dimos/robot/unitree_webrtc/unitree_go2.py
@@ -125,7 +122,6 @@ python dimos/robot/unitree_webrtc/unitree_go2.py
 export ROBOT_IP=192.168.X.XXX # Add the robot IP address
 python dimos/robot/unitree_webrtc/run_agents2.py
 ```
--->
 
 ## Quickstart
 
