@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<!-- Minimal box-only URDF for xArm6-like kinematics (6 DoF). -->
+<robot name="xarm6_minimal">
+  <!-- Base -->
+  <link name="base_link">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="0.12 0.12 0.06"/></geometry></visual>
+    <collision><origin xyz="0 0 0" rpy="0 0 0"/><geometry><box size="0.12 0.12 0.06"/></geometry></collision>
+  </link>
+
+  <!-- Link 1 (shoulder yaw, about Z) -->
+  <link name="link1">
+    <visual><origin xyz="0 0 0.07"/><geometry><box size="0.10 0.10 0.14"/></geometry></visual>
+    <collision><origin xyz="0 0 0.07"/><geometry><box size="0.10 0.10 0.14"/></geometry></collision>
+  </link>
+  <joint name="joint1" type="revolute">
+    <parent link="base_link"/>
+    <child link="link1"/>
+    <origin xyz="0 0 0.03" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.1416" upper="3.1416" effort="50" velocity="2.5"/>
+  </joint>
+
+  <!-- Link 2 (shoulder pitch, about Y) -->
+  <link name="link2">
+    <visual><origin xyz="0 0 0.12"/><geometry><box size="0.08 0.08 0.24"/></geometry></visual>
+    <collision><origin xyz="0 0 0.12"/><geometry><box size="0.08 0.08 0.24"/></geometry></collision>
+  </link>
+  <joint name="joint2" type="revolute">
+    <parent link="link1"/>
+    <child link="link2"/>
+    <origin xyz="0 0 0.14" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-2.2" upper="2.2" effort="50" velocity="2.5"/>
+  </joint>
+
+  <!-- Link 3 (elbow pitch, about Y) -->
+  <link name="link3">
+    <visual><origin xyz="0 0 0.12"/><geometry><box size="0.07 0.07 0.24"/></geometry></visual>
+    <collision><origin xyz="0 0 0.12"/><geometry><box size="0.07 0.07 0.24"/></geometry></collision>
+  </link>
+  <joint name="joint3" type="revolute">
+    <parent link="link2"/>
+    <child link="link3"/>
+    <origin xyz="0 0 0.24" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.1416" upper="3.1416" effort="40" velocity="2.5"/>
+  </joint>
+
+  <!-- Link 4 (wrist yaw, about Z) -->
+  <link name="link4">
+    <visual><origin xyz="0 0 0.08"/><geometry><box size="0.06 0.06 0.16"/></geometry></visual>
+    <collision><origin xyz="0 0 0.08"/><geometry><box size="0.06 0.06 0.16"/></geometry></collision>
+  </link>
+  <joint name="joint4" type="revolute">
+    <parent link="link3"/>
+    <child link="link4"/>
+    <origin xyz="0 0 0.24" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.1416" upper="3.1416" effort="30" velocity="3.0"/>
+  </joint>
+
+  <!-- Link 5 (wrist pitch, about Y) -->
+  <link name="link5">
+    <visual><origin xyz="0 0 0.06"/><geometry><box size="0.05 0.05 0.12"/></geometry></visual>
+    <collision><origin xyz="0 0 0.06"/><geometry><box size="0.05 0.05 0.12"/></geometry></collision>
+  </link>
+  <joint name="joint5" type="revolute">
+    <parent link="link4"/>
+    <child link="link5"/>
+    <origin xyz="0 0 0.16" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-2.6" upper="2.6" effort="30" velocity="3.0"/>
+  </joint>
+
+  <!-- Link 6 (wrist roll, about Z) -->
+  <link name="link6">
+    <visual><origin xyz="0 0 0.05"/><geometry><box size="0.045 0.045 0.10"/></geometry></visual>
+    <collision><origin xyz="0 0 0.05"/><geometry><box size="0.045 0.045 0.10"/></geometry></collision>
+  </link>
+  <joint name="joint6" type="revolute">
+    <parent link="link5"/>
+    <child link="link6"/>
+    <origin xyz="0 0 0.12" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.1416" upper="3.1416" effort="20" velocity="3.0"/>
+  </joint>
+
+  <!-- TCP -->
+  <link name="link_tcp">
+    <visual><origin xyz="0 0 0.04"/><geometry><box size="0.03 0.03 0.08"/></geometry></visual>
+    <collision><origin xyz="0 0 0.04"/><geometry><box size="0.03 0.03 0.08"/></geometry></collision>
+  </link>
+  <joint name="tcp_fixed" type="fixed">
+    <parent link="link6"/>
+    <child link="link_tcp"/>
+    <origin xyz="0 0 0.10" rpy="0 0 0"/>
+  </joint>
+</robot>
