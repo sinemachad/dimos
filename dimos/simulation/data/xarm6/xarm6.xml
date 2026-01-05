@@ -3,29 +3,29 @@
 
   <option integrator="implicitfast"/>
 
-  <!-- Meshes referenced from xarm_description to avoid duplication -->
+  <!-- Meshes stored locally in simulation/data/xarm6/ -->
   <asset>
     <material name="white" rgba="1 1 1 1"/>
     <material name="gray" rgba="0.753 0.753 0.753 1"/>
     <material name="black" rgba="0.149 0.149 0.149 1"/>
 
-    <!-- Arm links from xarm_description/meshes/xarm6/visual/ -->
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/xarm6/visual/link_base.stl" name="link_base"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/xarm6/visual/link1.stl" name="link1"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/xarm6/visual/link2.stl" name="link2"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/xarm6/visual/link3.stl" name="link3"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/xarm6/visual/link4.stl" name="link4"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/xarm6/visual/link5.stl" name="link5"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/xarm6/visual/link6.stl" name="link6"/>
+    <!-- Arm links from visual/ -->
+    <mesh file="visual/link_base.stl" name="link_base"/>
+    <mesh file="visual/link1.stl" name="link1"/>
+    <mesh file="visual/link2.stl" name="link2"/>
+    <mesh file="visual/link3.stl" name="link3"/>
+    <mesh file="visual/link4.stl" name="link4"/>
+    <mesh file="visual/link5.stl" name="link5"/>
+    <mesh file="visual/link6.stl" name="link6"/>
 
-    <!-- Gripper parts from xarm_description/meshes/gripper/xarm/ -->
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/gripper/xarm/base_link.stl" name="base_link"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/gripper/xarm/left_outer_knuckle.stl" name="left_outer_knuckle"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/gripper/xarm/left_finger.stl" name="left_finger"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/gripper/xarm/left_inner_knuckle.stl" name="left_inner_knuckle"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/gripper/xarm/right_outer_knuckle.stl" name="right_outer_knuckle"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/gripper/xarm/right_finger.stl" name="right_finger"/>
-    <mesh file="../../../../hardware/manipulators/xarm/xarm_description/meshes/gripper/xarm/right_inner_knuckle.stl" name="right_inner_knuckle"/>
+    <!-- Gripper parts from gripper/ -->
+    <mesh file="gripper/base_link.stl" name="base_link"/>
+    <mesh file="gripper/left_outer_knuckle.stl" name="left_outer_knuckle"/>
+    <mesh file="gripper/left_finger.stl" name="left_finger"/>
+    <mesh file="gripper/left_inner_knuckle.stl" name="left_inner_knuckle"/>
+    <mesh file="gripper/right_outer_knuckle.stl" name="right_outer_knuckle"/>
+    <mesh file="gripper/right_finger.stl" name="right_finger"/>
+    <mesh file="gripper/right_inner_knuckle.stl" name="right_inner_knuckle"/>
   </asset>
 
   <default>
