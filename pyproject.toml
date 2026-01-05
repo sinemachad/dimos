@@ -152,6 +152,12 @@ manipulation = [
     # piper arm
     "piper-sdk",
 
+    # xArm
+    "xArm-Python-SDK",
+
+    # Robot descriptions
+    "xacro",
+
     # Visualization (Optional)
     "kaleido>=0.2.1",
     "plotly>=5.9.0",
@@ -226,6 +232,7 @@ dev = [
 sim = [
     # Simulation
     "mujoco>=3.3.4",
+    "drake",
     "playground>=0.0.5",
 ]
 
