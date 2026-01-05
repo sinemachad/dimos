@@ -29,7 +29,7 @@ from pathlib import Path
 import sys
 import time
 
-from dask.distributed import Client, Event, LocalCluster
+from dask.distributed import Client, LocalCluster
 import rerun as rr  # pip install rerun-sdk
 import rerun.blueprint as rrb
 import yaml
@@ -62,9 +62,8 @@ class RerunConnection:
         self.stream.log(msg, value, **kwargs)
 
 
-def dashboard_process(stop_event_name: str) -> None:
+def dashboard_process() -> None:
     """Mirrors p1.py: init rerun, send blueprint, start grpc and dashboard server."""
-    stop_event = Event(stop_event_name)
 
     print("[Dask Dashboard] calling rr.init")
     rr.init(rerun_info.logging_id, spawn=False, recording_id=rerun_info.logging_id)
@@ -96,7 +95,8 @@ def dashboard_process(stop_event_name: str) -> None:
         keep_alive=True,
     )
     try:
-        while not stop_event.is_set():
+        # Keep the dashboard thread alive; this process will be terminated by the scheduler/cluster.
+        while True:
             time.sleep(0.25)
     except KeyboardInterrupt:
         print("[Dask Dashboard] interrupted, shutting down")
@@ -104,16 +104,13 @@ def dashboard_process(stop_event_name: str) -> None:
         thread.join(timeout=1)
 
 
-def log_stream_process(name: str, path_str: str, start_event_name: str) -> None:
-    print(f"""log process {name} started""")
-    start_event = Event(start_event_name)
+def log_stream_process(name: str, path_str: str) -> None:
+    print(f"log process {name} started")
     rc = RerunConnection()
     path = Path(path_str)
     if not path.exists():
         print(f"[Dask Logging {name}] file {path} does not exist", file=sys.stderr)
         return
-
-    start_event.wait()
 
     with path.open("r", encoding="utf-8") as f:
         for line_number, line in enumerate(f):
@@ -148,40 +145,23 @@ def main() -> None:
     )
     client = Client(cluster)
 
-    stop_event_name = "dask-rerun-stop-event"
-    start_event_name = "dask-rerun-start-event"
-    stop_event = Event(stop_event_name, client=client)
-    start_event = Event(start_event_name, client=client)
-
-    dashboard_future = client.submit(dashboard_process, stop_event_name, pure=False)
+    dashboard_future = client.submit(dashboard_process, pure=False)
+    # Give the dashboard/grpc server a moment to spin up before logging.
+    time.sleep(1.5)
     print("starting color_future")  # <- this prints before "dashboard_process" starts
     color_future = client.submit(
-        process2,
-        "color_image",
-        "./dimos/dashboard/support/color_image.yaml",
-        start_event_name,
-        pure=False,
+        process2, "color_image", "./dimos/dashboard/support/color_image.yaml", pure=False
     )
     lidar_future = client.submit(
-        log_stream_process,
-        "lidar",
-        "./dimos/dashboard/support/lidar.yaml",
-        start_event_name,
-        pure=False,
+        log_stream_process, "lidar", "./dimos/dashboard/support/lidar.yaml", pure=False
     )
-
-    # Kick off both logging tasks simultaneously.
-    start_event.set()
 
     # Wait for logging to finish.
     color_future.result()
     lidar_future.result()
 
-    stop_event.set()
-    try:
-        dashboard_future.result(timeout=5)
-    except Exception as exc:
-        print(f"[Main] dashboard future ended with: {exc}")
+    # Dashboard process will be torn down when the cluster closes.
+    dashboard_future.cancel()
 
     client.close()
     cluster.close()
