@@ -690,24 +690,25 @@ class ObjectSceneRegistrationModule(Module):
 
         # Rerun: log RGB image under proper TF hierarchy (world/robot/base/camera).
         # Log camera intrinsics as Pinhole (static, only once)
-        if not hasattr(self, '_rerun_camera_intrinsics_logged'):
+        if not hasattr(self, "_rerun_camera_intrinsics_logged"):
             try:
                 import rerun as rr  # type: ignore[import-not-found]
+
                 K = self._camera_info.K.reshape(3, 3)
                 self._rr_log(
                     "/world/robot/base/camera",
                     rr.Pinhole(
                         resolution=[self._camera_info.width, self._camera_info.height],
                         focal_length=[K[0, 0], K[1, 1]],
-                        principal_point=[K[0, 2], K[1, 2]]
+                        principal_point=[K[0, 2], K[1, 2]],
                     ),
-                    static=True
+                    static=True,
                 )
                 self._rerun_camera_intrinsics_logged = True
                 logger.info("[Rerun] Logged camera intrinsics as Pinhole")
             except Exception:
                 pass
-        
+
         self._rr_log("/world/robot/base/camera/rgb", color_image.to_rerun())
 
         # Convert compressed depth image
