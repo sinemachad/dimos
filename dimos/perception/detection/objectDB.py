@@ -40,7 +40,7 @@ class ObjectDB:
 
     def __init__(
         self,
-        distance_threshold: float = 0.5,
+        distance_threshold: float = 0.1,
         min_detections_for_permanent: int = 5,
         require_same_name_for_distance_match: bool = True,
         pending_ttl_seconds: float = 30.0,
