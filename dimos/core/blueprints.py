@@ -200,19 +200,11 @@ class ModuleBlueprintSet:
                 connections[remapped_name, conn.type].append((blueprint.module, conn.name))
 
         # Connect all In/Out connections by remapped name and type.
-        # Note: We must wait for set_transport calls to complete before starting modules,
-        # otherwise there's a race condition where modules try to use transports before they're set.
-        futures = []
         for remapped_name, type in connections.keys():
             transport = self._get_transport_for(remapped_name, type)
             for module, original_name in connections[(remapped_name, type)]:
                 instance = module_coordinator.get_instance(module)
-                future = instance.set_transport(original_name, transport)  # type: ignore[union-attr]
-                futures.append(future)
-
-        # Wait for all transport connections to complete
-        for future in futures:
-            future.result()  # type: ignore[union-attr]
+                instance.set_transport(original_name, transport)  # type: ignore[union-attr]
 
     def _connect_rpc_methods(self, module_coordinator: ModuleCoordinator) -> None:
         # Gather all RPC methods.
