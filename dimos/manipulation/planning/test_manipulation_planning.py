@@ -68,7 +68,7 @@ ROBOT_CONFIGS = {
 def get_base_path() -> Path:
     """Get base path for hardware/manipulators."""
     # examples -> planning -> manipulation -> dimos -> hardware
-    return Path(__file__).parent.parent.parent.parent / "hardware" / "manipulators"
+    return Path(__file__).parent.parent.parent / "hardware" / "manipulators"
 
 
 def get_urdf_path(robot_type: str) -> str:
