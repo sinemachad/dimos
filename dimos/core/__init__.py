@@ -9,7 +9,7 @@ from rich.console import Console
 
 import dimos.core.colors as colors
 from dimos.core.core import rpc
-from dimos.core.module import Module, ModuleBase, ModuleConfig
+from dimos.core.module import Module, ModuleBase, ModuleConfig, ModuleConfigT
 from dimos.core.rpc_client import RPCClient
 from dimos.core.stream import In, Out, RemoteIn, RemoteOut, Transport
 from dimos.core.transport import (
@@ -37,6 +37,7 @@ __all__ = [
     "Module",
     "ModuleBase",
     "ModuleConfig",
+    "ModuleConfigT",
     "Out",
     "PubSubTF",
     "RPCSpec",
@@ -93,22 +94,21 @@ def patchdask(dask_client: Client, local_cluster: LocalCluster) -> DimosCluster:
         *args,
         **kwargs,
     ):
-        console = Console()
-        with console.status(f"deploying [green]{actor_class.__name__}\n", spinner="arc"):
-            actor = dask_client.submit(  # type: ignore[no-untyped-call]
-                actor_class,
-                *args,
-                **kwargs,
-                actor=True,
-            ).result()
+        logger.info("Deploying module.", module=actor_class.__name__)
+        actor = dask_client.submit(  # type: ignore[no-untyped-call]
+            actor_class,
+            *args,
+            **kwargs,
+            actor=True,
+        ).result()
 
-            worker = actor.set_ref(actor).result()
-            logger.info("Deployed module.", module=actor._cls.__name__, worker_id=worker)
+        worker = actor.set_ref(actor).result()
+        logger.info("Deployed module.", module=actor._cls.__name__, worker_id=worker)
 
-            # Register actor deployment in shared memory
-            ActorRegistry.update(str(actor), str(worker))
+        # Register actor deployment in shared memory
+        ActorRegistry.update(str(actor), str(worker))
 
-            return RPCClient(actor, actor_class)
+        return RPCClient(actor, actor_class)
 
     def check_worker_memory() -> None:
         """Check memory usage of all workers."""

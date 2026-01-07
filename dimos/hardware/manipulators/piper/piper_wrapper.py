@@ -16,7 +16,7 @@
 
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 from ..base.sdk_interface import BaseManipulatorSDK, ManipulatorInfo
 
@@ -43,83 +43,53 @@ class PiperSDKWrapper(BaseManipulatorSDK):
     # ============= Connection Management =============
 
     def connect(self, config: dict[str, Any]) -> bool:
-        """Connect to Piper via CAN bus or simulation.
+        """Connect to Piper via CAN bus.
 
         Args:
-            config: Configuration with:
-                - connection_type: "hardware" (default) or "sim"
-                - can_port: CAN port for hardware (e.g., 'can0')
-                - control_rate: Control frequency for simulation (default: 100)
+            config: Configuration with 'can_port' (e.g., 'can0')
 
         Returns:
             True if connection successful
         """
-        connection_type = config.get("connection_type", "hardware")
-
         try:
-            if connection_type == "hardware":
-                from piper_sdk import C_PiperInterface_V2
+            from piper_sdk import C_PiperInterface_V2  # type: ignore[import-not-found]
 
-                can_port = config.get("can_port", "can0")
-                self.logger.info(f"Connecting to Piper via CAN port {can_port}...")
+            can_port = config.get("can_port", "can0")
+            self.logger.info(f"Connecting to Piper via CAN port {can_port}...")
 
-                # Create Piper SDK instance
-                self.native_sdk = C_PiperInterface_V2(
-                    can_name=can_port,
-                    judge_flag=True,  # Enable safety checks
-                    can_auto_init=True,  # Let SDK handle CAN initialization
-                    dh_is_offset=False,
-                )
+            # Create Piper SDK instance
+            self.native_sdk = C_PiperInterface_V2(
+                can_name=can_port,
+                judge_flag=True,  # Enable safety checks
+                can_auto_init=True,  # Let SDK handle CAN initialization
+                dh_is_offset=False,
+            )
 
-                # Connect to CAN port
-                self.native_sdk.ConnectPort(piper_init=True, start_thread=True)
+            # Connect to CAN port
+            self.native_sdk.ConnectPort(piper_init=True, start_thread=True)
 
-                # Wait for initialization
-                time.sleep(0.025)
+            # Wait for initialization
+            time.sleep(0.025)
 
-                # Check connection by trying to get status
-                status = self.native_sdk.GetArmStatus()
-                if status is not None:
-                    self._connected = True
-
-                    # Get firmware version
-                    try:
-                        version = self.native_sdk.GetPiperFirmwareVersion()
-                        self.logger.info(f"Connected to Piper (firmware: {version})")
-                    except:
-                        self.logger.info("Connected to Piper")
-
-                    return True
-                else:
-                    self.logger.error("Failed to connect to Piper - no status received")
-                    return False
-
-            elif connection_type == "sim":
-                from dimos.hardware.manipulators.piper.piper_sim_bridge import PiperSimBridge
-
-                control_rate = config.get("control_rate", 100)
-                self.logger.info(f"Connecting to Piper Sim (DOF: {self.dof})...")
-
-                self.native_sdk = PiperSimBridge(
-                    control_frequency=float(control_rate),
-                )
-                # PiperSimBridge needs explicit ConnectPort() call
-                self.native_sdk.ConnectPort(piper_init=True, start_thread=True)
-
+            # Check connection by trying to get status
+            status = self.native_sdk.GetArmStatus()
+            if status is not None:
                 self._connected = True
-                version = self.native_sdk.GetPiperFirmwareVersion()
-                self.logger.info(f"Connected to Piper Sim (version: {version})")
-                return True
 
+                # Get firmware version
+                try:
+                    version = self.native_sdk.GetPiperFirmwareVersion()
+                    self.logger.info(f"Connected to Piper (firmware: {version})")
+                except:
+                    self.logger.info("Connected to Piper")
+
+                return True
             else:
-                self.logger.error(f"Unknown connection_type: {connection_type}")
+                self.logger.error("Failed to connect to Piper - no status received")
                 return False
 
-        except ImportError as e:
-            if connection_type == "hardware":
-                self.logger.error("Piper SDK not installed. Please install piper_sdk")
-            else:
-                self.logger.error(f"Import error: {e}")
+        except ImportError:
+            self.logger.error("Piper SDK not installed. Please install piper_sdk")
             return False
         except Exception as e:
             self.logger.error(f"Connection failed: {e}")

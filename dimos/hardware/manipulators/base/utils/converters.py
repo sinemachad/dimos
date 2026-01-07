@@ -15,10 +15,9 @@
 """Unit conversion utilities for manipulator drivers."""
 
 import math
-from typing import Union
 
 
-def degrees_to_radians(degrees: Union[float, list[float]]) -> Union[float, list[float]]:
+def degrees_to_radians(degrees: float | list[float]) -> float | list[float]:
     """Convert degrees to radians.
 
     Args:
@@ -32,7 +31,7 @@ def degrees_to_radians(degrees: Union[float, list[float]]) -> Union[float, list[
     return math.radians(degrees)
 
 
-def radians_to_degrees(radians: Union[float, list[float]]) -> Union[float, list[float]]:
+def radians_to_degrees(radians: float | list[float]) -> float | list[float]:
     """Convert radians to degrees.
 
     Args:
@@ -46,7 +45,7 @@ def radians_to_degrees(radians: Union[float, list[float]]) -> Union[float, list[
     return math.degrees(radians)
 
 
-def mm_to_meters(mm: Union[float, list[float]]) -> Union[float, list[float]]:
+def mm_to_meters(mm: float | list[float]) -> float | list[float]:
     """Convert millimeters to meters.
 
     Args:
@@ -60,7 +59,7 @@ def mm_to_meters(mm: Union[float, list[float]]) -> Union[float, list[float]]:
     return mm / 1000.0
 
 
-def meters_to_mm(meters: Union[float, list[float]]) -> Union[float, list[float]]:
+def meters_to_mm(meters: float | list[float]) -> float | list[float]:
     """Convert meters to millimeters.
 
     Args:
@@ -74,7 +73,7 @@ def meters_to_mm(meters: Union[float, list[float]]) -> Union[float, list[float]]
     return meters * 1000.0
 
 
-def rpm_to_rad_per_sec(rpm: Union[float, list[float]]) -> Union[float, list[float]]:
+def rpm_to_rad_per_sec(rpm: float | list[float]) -> float | list[float]:
     """Convert RPM to rad/s.
 
     Args:
@@ -89,7 +88,7 @@ def rpm_to_rad_per_sec(rpm: Union[float, list[float]]) -> Union[float, list[floa
     return rpm * factor
 
 
-def rad_per_sec_to_rpm(rad_per_sec: Union[float, list[float]]) -> Union[float, list[float]]:
+def rad_per_sec_to_rpm(rad_per_sec: float | list[float]) -> float | list[float]:
     """Convert rad/s to RPM.
 
     Args:
@@ -157,7 +156,7 @@ def euler_to_quaternion(roll: float, pitch: float, yaw: float) -> tuple[float, f
     return qx, qy, qz, qw
 
 
-def pose_dict_to_list(pose: dict) -> list[float]:
+def pose_dict_to_list(pose: dict[str, float]) -> list[float]:
     """Convert pose dictionary to list format.
 
     Args:
@@ -176,7 +175,7 @@ def pose_dict_to_list(pose: dict) -> list[float]:
     ]
 
 
-def pose_list_to_dict(pose: list[float]) -> dict:
+def pose_list_to_dict(pose: list[float]) -> dict[str, float]:
     """Convert pose list to dictionary format.
 
     Args:
@@ -198,7 +197,7 @@ def pose_list_to_dict(pose: list[float]) -> dict:
     }
 
 
-def twist_dict_to_list(twist: dict) -> list[float]:
+def twist_dict_to_list(twist: dict[str, float]) -> list[float]:
     """Convert twist dictionary to list format.
 
     Args:
@@ -217,7 +216,7 @@ def twist_dict_to_list(twist: dict) -> list[float]:
     ]
 
 
-def twist_list_to_dict(twist: list[float]) -> dict:
+def twist_list_to_dict(twist: list[float]) -> dict[str, float]:
     """Convert twist list to dictionary format.
 
     Args:

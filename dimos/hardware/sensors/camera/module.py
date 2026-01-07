@@ -24,13 +24,11 @@ from reactivex import operators as ops
 from reactivex.disposable import Disposable
 from reactivex.observable import Observable
 
-from dimos.agents2 import Output, Reducer, Stream, skill
-from dimos.core import Module, Out, rpc
-from dimos.core.module import Module, ModuleConfig
-from dimos.hardware.sensors.camera.spec import (
-    CameraHardware,
-)
-from dimos.hardware.sensors.camera.webcam import Webcam, WebcamConfig
+from dimos import spec
+from dimos.agents import Output, Reducer, Stream, skill  # type: ignore[attr-defined]
+from dimos.core import Module, ModuleConfig, Out, rpc
+from dimos.hardware.sensors.camera.spec import CameraHardware
+from dimos.hardware.sensors.camera.webcam import Webcam
 from dimos.msgs.geometry_msgs import Quaternion, Transform, Vector3
 from dimos.msgs.sensor_msgs import Image
 from dimos.msgs.sensor_msgs.Image import Image, sharpness_barrier
@@ -53,7 +51,7 @@ class CameraModuleConfig(ModuleConfig):
     hardware: Callable[[], CameraHardware] | CameraHardware = Webcam
 
 
-class CameraModule(Module, spec.Camera):
+class CameraModule(Module[CameraModuleConfig], spec.Camera):
     color_image: Out[Image]
     camera_info: Out[CameraInfo]
 
@@ -62,6 +60,7 @@ class CameraModule(Module, spec.Camera):
     _camera_info_subscription: Disposable | None = None
     _skill_stream: Observable[Image] | None = None
 
+    config: CameraModuleConfig
     default_config = CameraModuleConfig
 
     def __init__(self, *args, **kwargs):

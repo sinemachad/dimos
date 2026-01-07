@@ -56,7 +56,6 @@ def piper_driver(**config: Any) -> Any:
             - enable_on_start: Whether to enable servos on start (default: True)
             - control_rate: Control loop + joint feedback rate in Hz (default: 100)
             - monitor_rate: Robot state monitoring rate in Hz (default: 10)
-            - connection_type: "hardware" for real Piper or "sim" for simulation (default: "hardware")
 
     Returns:
         Blueprint configuration for PiperDriver
@@ -67,7 +66,6 @@ def piper_driver(**config: Any) -> Any:
     config.setdefault("enable_on_start", True)
     config.setdefault("control_rate", 100)
     config.setdefault("monitor_rate", 10)
-    config.setdefault("connection_type", "hardware")
 
     # Return the piper_driver blueprint with the config
     return piper_driver_blueprint(**config)
@@ -86,7 +84,6 @@ piper_servo = piper_driver(
     enable_on_start=True,
     control_rate=100,
     monitor_rate=10,
-    connection_type="hardware",
 ).transports(
     {
         # Joint state feedback (position, velocity, effort)
@@ -118,7 +115,6 @@ piper_cartesian = autoconnect(
         enable_on_start=True,
         control_rate=100,
         monitor_rate=10,
-        connection_type="hardware",
     ),
     cartesian_motion_controller(
         control_frequency=20.0,
@@ -156,7 +152,6 @@ piper_trajectory = autoconnect(
         enable_on_start=True,
         control_rate=100,
         monitor_rate=10,
-        connection_type="hardware",
     ),
     joint_trajectory_controller(
         control_frequency=100.0,
@@ -174,35 +169,4 @@ piper_trajectory = autoconnect(
     }
 )
 
-# =============================================================================
-# Piper Trajectory Simulation Blueprint
-# =============================================================================
-# Same as piper_trajectory but using MuJoCo simulation instead of hardware.
-# =============================================================================
-
-piper_trajectory_sim = autoconnect(
-    piper_driver(
-        can_port="can0",
-        has_gripper=True,
-        enable_on_start=True,
-        control_rate=100,
-        monitor_rate=10,
-        connection_type="sim",
-    ),
-    joint_trajectory_controller(
-        control_frequency=100.0,
-    ),
-).transports(
-    {
-        # Shared topics between driver and controller
-        ("joint_state", JointState): LCMTransport("/piper/joint_states", JointState),
-        ("robot_state", RobotState): LCMTransport("/piper/robot_state", RobotState),
-        ("joint_position_command", JointCommand): LCMTransport(
-            "/piper/joint_position_command", JointCommand
-        ),
-        # Trajectory input topic
-        ("trajectory", JointTrajectory): LCMTransport("/trajectory", JointTrajectory),
-    }
-)
-
-__all__ = ["piper_cartesian", "piper_servo", "piper_trajectory", "piper_trajectory_sim"]
+__all__ = ["piper_cartesian", "piper_servo", "piper_trajectory"]
