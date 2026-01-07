@@ -134,7 +134,7 @@ def _process_xacro(
 ) -> str:
     """Process xacro file to URDF."""
     try:
-        import xacro
+        import xacro  # type: ignore[import-untyped]
     except ImportError:
         raise ImportError(
             "xacro is required for processing .xacro files. Install with: pip install xacro"
@@ -147,14 +147,14 @@ def _process_xacro(
     # Store original function
     original_find = substitution_args._find
 
-    def custom_find(resolved: str, a: str, args: list, context: dict) -> str:
+    def custom_find(resolved: str, a: str, args: list[str], context: dict[str, str]) -> str:
         """Custom $(find pkg) handler that uses our package_paths."""
         pkg_name = args[0] if args else ""
         if pkg_name in package_paths:
             pkg_path = str(Path(package_paths[pkg_name]).resolve())
             return resolved.replace(f"$({a})", pkg_path)
         # Fall back to original behavior
-        return original_find(resolved, a, args, context)
+        return str(original_find(resolved, a, args, context))
 
     # Monkey-patch the find function temporarily
     substitution_args._find = custom_find
@@ -165,7 +165,7 @@ def _process_xacro(
             str(xacro_path),
             mappings=xacro_args,
         )
-        return doc.toprettyxml(indent="  ")
+        return str(doc.toprettyxml(indent="  "))
     finally:
         # Restore original function
         substitution_args._find = original_find
@@ -207,7 +207,7 @@ def _resolve_package_uris(
     # Pattern for package:// URIs
     pattern = r'package://([^/]+)/(.+?)(["\s<>])'
 
-    def replace_uri(match: re.Match) -> str:
+    def replace_uri(match: re.Match[str]) -> str:
         pkg_name = match.group(1)
         rel_path = match.group(2)
         suffix = match.group(3)
@@ -241,9 +241,9 @@ def _convert_meshes(urdf_content: str, output_dir: Path) -> str:
     # Find mesh file references
     pattern = r'filename="([^"]+\.(dae|stl|DAE|STL))"'
 
-    converted = {}
+    converted: dict[str, str] = {}
 
-    def convert_mesh(match: re.Match) -> str:
+    def convert_mesh(match: re.Match[str]) -> str:
         original_path = match.group(1)
 
         if original_path in converted:
@@ -257,8 +257,8 @@ def _convert_meshes(urdf_content: str, output_dir: Path) -> str:
             mesh_name = Path(original_path).stem
             obj_path = mesh_dir / f"{mesh_name}.obj"
 
-            # Export as OBJ
-            mesh.export(str(obj_path), file_type="obj")
+            # Export as OBJ (trimesh.export returns None, ignore)
+            mesh.export(str(obj_path), file_type="obj")  # type: ignore[no-untyped-call]
             logger.debug(f"Converted mesh: {original_path} -> {obj_path}")
 
             converted[original_path] = str(obj_path)

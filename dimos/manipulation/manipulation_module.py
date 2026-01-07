@@ -60,6 +60,8 @@ from dimos.core import In, Module, Out, rpc
 from dimos.core.module import ModuleConfig
 from dimos.manipulation.planning import (
     JointTrajectoryGenerator,
+    KinematicsSpec,
+    PlannerSpec,
     RobotModelConfig,
     create_kinematics,
     create_planner,
@@ -142,13 +144,16 @@ class ManipulationModule(Module):
 
     default_config = ManipulationModuleConfig
 
+    # Type annotation for the config attribute (mypy uses this)
+    config: ManipulationModuleConfig
+
     # Input: Joint state feedback from driver
-    joint_state: In[JointState] = None
+    joint_state: In[JointState]
 
     # Output: Trajectory to controller
-    trajectory: Out[JointTrajectory] = None
+    trajectory: Out[JointTrajectory]
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
 
         # State machine
@@ -158,8 +163,8 @@ class ManipulationModule(Module):
 
         # Planning components (initialized in start())
         self._world_monitor: WorldMonitor | None = None
-        self._planner = None
-        self._kinematics = None
+        self._planner: PlannerSpec | None = None
+        self._kinematics: KinematicsSpec | None = None
         self._trajectory_gen: JointTrajectoryGenerator | None = None
         self._robot_id: str = ""
 
@@ -329,7 +334,7 @@ class ManipulationModule(Module):
             check_collision=True,
         )
 
-        if not ik_result.is_success():
+        if not ik_result.is_success() or ik_result.joint_positions is None:
             logger.warning(f"IK failed: {ik_result.status.name}")
             self._state = ManipulationState.FAULT
             self._error_message = f"IK failed: {ik_result.status.name}"
@@ -585,7 +590,7 @@ class ManipulationModule(Module):
             check_collision=True,
         )
 
-        if not ik_result.is_success():
+        if not ik_result.is_success() or ik_result.joint_positions is None:
             logger.warning(f"IK failed: {ik_result.status.name}")
             self._state = ManipulationState.FAULT
             self._error_message = f"IK failed: {ik_result.status.name}"
@@ -732,7 +737,8 @@ class ManipulationModule(Module):
             with self._world_monitor.scratch_context() as ctx:
                 self._world_monitor.world.set_positions(ctx, self._robot_id, q)
                 # Publish this specific context to meshcat (not the live context)
-                self._world_monitor.world.publish_to_meshcat(ctx)
+                if hasattr(self._world_monitor.world, "publish_to_meshcat"):
+                    self._world_monitor.world.publish_to_meshcat(ctx)
             time.sleep(dt)
 
         logger.info("Preview complete")
@@ -791,7 +797,7 @@ class ManipulationModule(Module):
         return True
 
     @rpc
-    def get_debug_info(self) -> dict:
+    def get_debug_info(self) -> dict[str, object]:
         """Get debug info about joint state flow.
 
         Returns:

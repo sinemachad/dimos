@@ -333,6 +333,14 @@ ignore_missing_imports = true
 module = ["dimos.rxpy_backpressure", "dimos.rxpy_backpressure.*"]
 follow_imports = "skip"
 
+# ROS package files - these are copied from external ROS packages without type annotations
+[[tool.mypy.overrides]]
+module = [
+    "dimos.hardware.manipulators.xarm.xarm_description.*",
+    "dimos.hardware.manipulators.piper.piper_description.*",
+]
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["dimos"]
 markers = [

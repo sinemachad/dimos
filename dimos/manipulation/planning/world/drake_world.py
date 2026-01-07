@@ -237,22 +237,23 @@ class DrakeWorld:
                 convert_meshes=config.auto_convert_meshes,
             )
 
-            logger.info(f"Using prepared URDF: {urdf_path}")
+            urdf_path_obj = Path(urdf_path)
+            logger.info(f"Using prepared URDF: {urdf_path_obj}")
 
             # Register package paths for mesh resolution
             if config.package_paths:
                 for pkg_name, pkg_path in config.package_paths.items():
-                    self._parser.package_map().Add(pkg_name, pkg_path)
+                    self._parser.package_map().Add(pkg_name, Path(pkg_path))
             else:
                 # Fallback: register URDF directory as package
-                package_dir = urdf_path.parent
+                package_dir = urdf_path_obj.parent
                 self._parser.package_map().Add(
                     package_name=f"{config.name}_description",
-                    package_path=str(package_dir),
+                    package_path=package_dir,
                 )
 
             # Parse the URDF
-            model_instances = self._parser.AddModels(str(urdf_path))
+            model_instances = self._parser.AddModels(urdf_path_obj)
             if not model_instances:
                 raise ValueError(f"Failed to parse URDF: {urdf_path}")
 
@@ -472,6 +473,7 @@ class DrakeWorld:
         rgba = Rgba(*obstacle.color)
 
         # Create Drake shape and add to Meshcat
+        shape: Box | Sphere | Cylinder
         if obstacle.obstacle_type == ObstacleType.BOX:
             shape = Box(*obstacle.dimensions)
         elif obstacle.obstacle_type == ObstacleType.SPHERE:
@@ -564,7 +566,7 @@ class DrakeWorld:
 
             # Compute joint indices for each robot
             for robot_id, robot_data in self._robots.items():
-                joint_indices = []
+                joint_indices: list[int] = []
                 for joint_name in robot_data.config.joint_names:
                     joint = self._plant.GetJointByName(joint_name, robot_data.model_instance)
                     start_idx = joint.position_start()
@@ -717,7 +719,7 @@ class DrakeWorld:
         WARNING: Not thread-safe for reads during writes.
         Use scratch_context() for planning operations.
         """
-        if not self._finalized:
+        if not self._finalized or self._live_context is None:
             raise RuntimeError("World must be finalized first")
         return self._live_context
 
@@ -749,7 +751,7 @@ class DrakeWorld:
 
         Called by StateMonitor when new JointState arrives.
         """
-        if not self._finalized:
+        if not self._finalized or self._plant_context is None:
             return  # Silently ignore before finalization
 
         with self._lock:
@@ -810,9 +812,9 @@ class DrakeWorld:
             raise KeyError(f"Robot '{robot_id}' not found")
 
         scene_graph_ctx = self._diagram.GetSubsystemContext(self._scene_graph, ctx)
-        query_object: QueryObject = self._scene_graph.get_query_output_port().Eval(scene_graph_ctx)
+        query_object = self._scene_graph.get_query_output_port().Eval(scene_graph_ctx)
 
-        return not query_object.HasCollisions()
+        return not query_object.HasCollisions()  # type: ignore[attr-defined]
 
     def get_min_distance(self, ctx: Context, robot_id: str) -> float:
         """Get minimum signed distance (positive = clearance, negative = penetration)."""
@@ -820,14 +822,14 @@ class DrakeWorld:
             raise RuntimeError("World must be finalized first")
 
         scene_graph_ctx = self._diagram.GetSubsystemContext(self._scene_graph, ctx)
-        query_object: QueryObject = self._scene_graph.get_query_output_port().Eval(scene_graph_ctx)
+        query_object = self._scene_graph.get_query_output_port().Eval(scene_graph_ctx)
 
-        signed_distance_pairs = query_object.ComputeSignedDistancePairwiseClosestPoints()
+        signed_distance_pairs = query_object.ComputeSignedDistancePairwiseClosestPoints()  # type: ignore[attr-defined]
 
         if not signed_distance_pairs:
             return float("inf")
 
-        return min(pair.distance for pair in signed_distance_pairs)
+        return float(min(pair.distance for pair in signed_distance_pairs))
 
     # ============= Forward Kinematics (context-based) =============
 
@@ -886,7 +888,7 @@ class DrakeWorld:
             plant_ctx,
             JacobianWrtVariable.kQDot,
             robot_data.ee_frame,
-            [0, 0, 0],  # Point on end-effector
+            np.array([0.0, 0.0, 0.0]),  # Point on end-effector
             self._plant.world_frame(),
             self._plant.world_frame(),
         )

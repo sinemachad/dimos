@@ -64,7 +64,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -89,12 +89,15 @@ if TYPE_CHECKING:
         WorldSpec,
     )
 
+# Type for robot config dictionaries
+RobotConfigDict = dict[str, str | list[str] | bool | dict[str, str]]
+
 
 class PlanningTester:
     """Interactive planning tester with robot, obstacles, IK, and planning."""
 
     # Supported robot configurations
-    ROBOT_CONFIGS = {
+    ROBOT_CONFIGS: dict[str, RobotConfigDict] = {
         "piper": {
             "name": "piper",
             "urdf_subpath": "piper/piper_description/urdf/piper_description.urdf",
@@ -156,6 +159,30 @@ class PlanningTester:
         self._obstacle_counter = 0
         self._current_joints: NDArray[np.float64] | None = None
 
+    def _get_world(self) -> WorldSpec:
+        """Get world with None check."""
+        if self._world is None:
+            raise RuntimeError("World not initialized")
+        return self._world
+
+    def _get_robot_id(self) -> str:
+        """Get robot_id with None check."""
+        if self._robot_id is None:
+            raise RuntimeError("Robot not loaded")
+        return self._robot_id
+
+    def _publish_to_meshcat(self) -> None:
+        """Publish to Meshcat if available (Drake-specific)."""
+        if self._world is not None and hasattr(self._world, "publish_to_meshcat"):
+            self._world.publish_to_meshcat()
+
+    def _get_joint_names(self) -> list[str]:
+        """Get joint names for the current robot."""
+        names = self.ROBOT_CONFIGS[self._robot_type]["joint_names"]
+        if isinstance(names, list):
+            return names
+        raise ValueError("joint_names must be a list")
+
     def setup(self) -> bool:
         """Set up the planning stack."""
         print("=" * 60)
@@ -188,10 +215,11 @@ class PlanningTester:
         print("   World finalized")
 
         # Initialize robot position (DOF from robot config)
-        num_joints = len(self.ROBOT_CONFIGS[self._robot_type]["joint_names"])
+        num_joints = len(self._get_joint_names())
         self._current_joints = np.zeros(num_joints)
-        self._world.sync_from_joint_state(self._robot_id, self._current_joints)
-        self._world.publish_to_meshcat()
+        world = self._get_world()
+        world.sync_from_joint_state(self._get_robot_id(), self._current_joints)
+        self._publish_to_meshcat()
 
         # Add default test obstacle (commented out for dynamic obstacle testing)
         # print("\n4. Adding test obstacle...")
@@ -218,9 +246,10 @@ class PlanningTester:
             color=(1.0, 0.0, 0.0, 0.8),
         )
 
-        self._world.add_obstacle(obstacle)
+        world = self._get_world()
+        world.add_obstacle(obstacle)
         self._obstacles[obstacle.name] = obstacle
-        self._world.publish_to_meshcat()
+        self._publish_to_meshcat()
         self._obstacle_counter = 1
 
         print(f"   Added obstacle: {obstacle.name} at {obstacle_pose[:3, 3]}")
@@ -231,30 +260,43 @@ class PlanningTester:
 
         # Path: examples -> planning -> manipulation -> dimos -> hardware
         base_path = Path(__file__).parent.parent.parent.parent / "hardware" / "manipulators"
-        urdf_path = base_path / robot_cfg["urdf_subpath"]
+        urdf_subpath = str(robot_cfg["urdf_subpath"])
+        urdf_path = base_path / urdf_subpath
 
         if not urdf_path.exists():
             print(f"   ERROR: Robot URDF not found: {urdf_path}")
             return False
 
         # Build xacro args if needed
-        xacro_args = robot_cfg.get("xacro_args", {})
+        xacro_args_raw = robot_cfg.get("xacro_args", {})
+        xacro_args: dict[str, str] = (
+            dict(xacro_args_raw) if isinstance(xacro_args_raw, dict) else {}
+        )
+
+        # Extract config values with proper types
+        name = str(robot_cfg["name"])
+        joint_names = self._get_joint_names()
+        ee_link = str(robot_cfg["end_effector_link"])
+        base_link = str(robot_cfg["base_link"])
+        pkg_name = str(robot_cfg["package_name"])
+        pkg_subpath = str(robot_cfg["package_subpath"])
 
         config = RobotModelConfig(
-            name=robot_cfg["name"],
+            name=name,
             urdf_path=str(urdf_path),
             base_pose=np.eye(4),
-            joint_names=robot_cfg["joint_names"],
-            end_effector_link=robot_cfg["end_effector_link"],
-            base_link=robot_cfg["base_link"],
+            joint_names=joint_names,
+            end_effector_link=ee_link,
+            base_link=base_link,
             package_paths={
-                robot_cfg["package_name"]: str(base_path / robot_cfg["package_subpath"]),
+                pkg_name: str(base_path / pkg_subpath),
             },
             auto_convert_meshes=True,
             xacro_args=xacro_args,
         )
 
-        self._robot_id = self._world.add_robot(config)
+        world = self._get_world()
+        self._robot_id = world.add_robot(config)
         print(f"   Loaded robot: {self._robot_id} ({self._robot_type})")
         return True
 
@@ -367,32 +409,37 @@ class PlanningTester:
     def _go_random(self) -> None:
         """Move robot to random configuration."""
         print("Moving to random configuration...")
-        lower, upper = self._world.get_joint_limits(self._robot_id)
+        world = self._get_world()
+        robot_id = self._get_robot_id()
+        lower, upper = world.get_joint_limits(robot_id)
         joints = np.random.uniform(lower * 0.8, upper * 0.8)  # Stay within 80% of limits
         self._move_robot_to(joints)
 
     def _move_robot_to(self, joints: NDArray[np.float64], animate: bool = True) -> None:
         """Move robot to target joints with optional animation."""
+        world = self._get_world()
+        robot_id = self._get_robot_id()
+
         if animate and self._current_joints is not None:
             # Interpolate for smooth motion
             path = [self._current_joints, joints]
             interpolated = interpolate_path(path, resolution=0.05)
 
             for waypoint in interpolated:
-                self._world.sync_from_joint_state(self._robot_id, waypoint)
-                self._world.publish_to_meshcat()
+                world.sync_from_joint_state(robot_id, waypoint)
+                self._publish_to_meshcat()
                 time.sleep(0.02)
         else:
-            self._world.sync_from_joint_state(self._robot_id, joints)
-            self._world.publish_to_meshcat()
+            world.sync_from_joint_state(robot_id, joints)
+            self._publish_to_meshcat()
 
         self._current_joints = joints.copy()
 
         # Show result
-        with self._world.scratch_context() as ctx:
-            self._world.set_positions(ctx, self._robot_id, joints)
-            ee_pose = self._world.get_ee_pose(ctx, self._robot_id)
-            is_free = self._world.is_collision_free(ctx, self._robot_id)
+        with world.scratch_context() as ctx:
+            world.set_positions(ctx, robot_id, joints)
+            ee_pose = world.get_ee_pose(ctx, robot_id)
+            is_free = world.is_collision_free(ctx, robot_id)
 
         print(f"Joints: {self._format_array(joints)}")
         print(f"EE Position: {self._format_array(ee_pose[:3, 3])}")
@@ -400,9 +447,13 @@ class PlanningTester:
 
     def _show_ee_pose(self) -> None:
         """Show current end-effector pose."""
-        with self._world.scratch_context() as ctx:
-            self._world.set_positions(ctx, self._robot_id, self._current_joints)
-            ee_pose = self._world.get_ee_pose(ctx, self._robot_id)
+        world = self._get_world()
+        robot_id = self._get_robot_id()
+        if self._current_joints is None:
+            raise RuntimeError("Current joints not initialized")
+        with world.scratch_context() as ctx:
+            world.set_positions(ctx, robot_id, self._current_joints)
+            ee_pose = world.get_ee_pose(ctx, robot_id)
 
         print("\nEnd-Effector Pose:")
         print(f"  Position: {self._format_array(ee_pose[:3, 3])}")
@@ -412,10 +463,14 @@ class PlanningTester:
 
     def _check_collision(self) -> None:
         """Check current collision status."""
-        with self._world.scratch_context() as ctx:
-            self._world.set_positions(ctx, self._robot_id, self._current_joints)
-            is_free = self._world.is_collision_free(ctx, self._robot_id)
-            min_dist = self._world.get_min_distance(ctx, self._robot_id)
+        world = self._get_world()
+        robot_id = self._get_robot_id()
+        if self._current_joints is None:
+            raise RuntimeError("Current joints not initialized")
+        with world.scratch_context() as ctx:
+            world.set_positions(ctx, robot_id, self._current_joints)
+            is_free = world.is_collision_free(ctx, robot_id)
+            min_dist = world.get_min_distance(ctx, robot_id)
 
         status = "COLLISION-FREE" if is_free else "IN COLLISION"
         print(f"\nCollision Status: {status}")
@@ -430,14 +485,22 @@ class PlanningTester:
         print("\nInverse Kinematics Solver")
         print("-" * 40)
 
+        world = self._get_world()
+        robot_id = self._get_robot_id()
+        kinematics = self._kinematics
+        if kinematics is None:
+            raise RuntimeError("Kinematics not initialized")
+        if self._current_joints is None:
+            raise RuntimeError("Current joints not initialized")
+
         # Get target position
         print("Enter target position (x, y, z) or 'current' for current EE position:")
         pos_str = input("Position: ").strip()
 
         if pos_str.lower() == "current":
-            with self._world.scratch_context() as ctx:
-                self._world.set_positions(ctx, self._robot_id, self._current_joints)
-                current_pose = self._world.get_ee_pose(ctx, self._robot_id)
+            with world.scratch_context() as ctx:
+                world.set_positions(ctx, robot_id, self._current_joints)
+                current_pose = world.get_ee_pose(ctx, robot_id)
             target_pos = current_pose[:3, 3]
             print(f"Using current: {self._format_array(target_pos)}")
         else:
@@ -466,16 +529,16 @@ class PlanningTester:
                 ]
             )
         else:
-            with self._world.scratch_context() as ctx:
-                self._world.set_positions(ctx, self._robot_id, self._current_joints)
-                target_pose = self._world.get_ee_pose(ctx, self._robot_id).copy()
+            with world.scratch_context() as ctx:
+                world.set_positions(ctx, robot_id, self._current_joints)
+                target_pose = world.get_ee_pose(ctx, robot_id).copy()
             target_pose[:3, 3] = target_pos
 
         # Solve IK
         print("\nSolving IK...")
-        result = self._kinematics.solve(
-            world=self._world,
-            robot_id=self._robot_id,
+        result = kinematics.solve(
+            world=world,
+            robot_id=robot_id,
             target_pose=target_pose,
             seed=self._current_joints,
             check_collision=True,
@@ -489,7 +552,7 @@ class PlanningTester:
 
             # Move to solution?
             move = input("\nMove robot to solution? (y/n): ").strip().lower()
-            if move == "y":
+            if move == "y" and result.joint_positions is not None:
                 self._move_robot_to(result.joint_positions)
         else:
             print(f"IK FAILED: {result.status.name}")
@@ -499,6 +562,14 @@ class PlanningTester:
         """Plan path to goal configuration."""
         print("\nMotion Planner")
         print("-" * 40)
+
+        world = self._get_world()
+        robot_id = self._get_robot_id()
+        planner = self._planner
+        if planner is None:
+            raise RuntimeError("Planner not initialized")
+        if self._current_joints is None:
+            raise RuntimeError("Current joints not initialized")
 
         print("Enter goal joint configuration (6 values) or 'ik' to solve IK first:")
         goal_str = input("Goal: ").strip()
@@ -519,9 +590,9 @@ class PlanningTester:
             return
 
         # Check goal validity
-        with self._world.scratch_context() as ctx:
-            self._world.set_positions(ctx, self._robot_id, q_goal)
-            goal_free = self._world.is_collision_free(ctx, self._robot_id)
+        with world.scratch_context() as ctx:
+            world.set_positions(ctx, robot_id, q_goal)
+            goal_free = world.is_collision_free(ctx, robot_id)
 
         if not goal_free:
             print("WARNING: Goal configuration is in collision!")
@@ -532,9 +603,9 @@ class PlanningTester:
         # Plan
         print("\nPlanning path...")
 
-        result = self._planner.plan_joint_path(
-            world=self._world,
-            robot_id=self._robot_id,
+        result = planner.plan_joint_path(
+            world=world,
+            robot_id=robot_id,
             q_start=self._current_joints,
             q_goal=q_goal,
             timeout=10.0,
@@ -563,6 +634,9 @@ class PlanningTester:
         """
         print(f"Executing path ({duration:.1f}s animation)...")
 
+        world = self._get_world()
+        robot_id = self._get_robot_id()
+
         # Interpolate for smooth visualization
         interpolated = interpolate_path(path, resolution=0.02)
         num_frames = len(interpolated)
@@ -571,8 +645,8 @@ class PlanningTester:
         dt = duration / max(num_frames - 1, 1)
 
         for i, waypoint in enumerate(interpolated):
-            self._world.sync_from_joint_state(self._robot_id, waypoint)
-            self._world.publish_to_meshcat()
+            world.sync_from_joint_state(robot_id, waypoint)
+            self._publish_to_meshcat()
 
             if i % max(num_frames // 5, 1) == 0:
                 progress = (i / num_frames) * 100
@@ -627,9 +701,10 @@ class PlanningTester:
                 color=color,
             )
 
-            self._world.add_obstacle(obstacle)
+            world = self._get_world()
+            world.add_obstacle(obstacle)
             self._obstacles[name] = obstacle
-            self._world.publish_to_meshcat()
+            self._publish_to_meshcat()
 
             print(f"Added obstacle: {name}")
             print(f"  Type: {obs_type.name}")
@@ -655,9 +730,10 @@ class PlanningTester:
         new_pose = np.eye(4)
         new_pose[:3, 3] = pos
 
-        self._world.update_obstacle_pose(name, new_pose)
+        world = self._get_world()
+        world.update_obstacle_pose(name, new_pose)
         self._obstacles[name].pose = new_pose
-        self._world.publish_to_meshcat()
+        self._publish_to_meshcat()
 
         print(f"Moved '{name}' to {self._format_array(pos)}")
 
@@ -674,9 +750,10 @@ class PlanningTester:
             print(f"Obstacle '{name}' not found.")
             return
 
-        self._world.remove_obstacle(name)
+        world = self._get_world()
+        world.remove_obstacle(name)
         del self._obstacles[name]
-        self._world.publish_to_meshcat()
+        self._publish_to_meshcat()
         print(f"Removed: {name}")
 
     def _list_obstacles(self) -> None:
@@ -696,16 +773,17 @@ class PlanningTester:
             print("No obstacles to clear.")
             return
 
-        self._world.clear_obstacles()
+        world = self._get_world()
+        world.clear_obstacles()
         self._obstacles.clear()
-        self._world.publish_to_meshcat()
+        self._publish_to_meshcat()
         print("Cleared all obstacles.")
 
     # =========================================================================
     # Helpers
     # =========================================================================
 
-    def _get_box_dimensions(self) -> tuple[float, float, float]:
+    def _get_box_dimensions(self) -> tuple[float, ...]:
         """Get box dimensions."""
         print("Dimensions (w, h, d) [default: 0.1 0.1 0.1]:")
         dims_str = input("  Dims: ").strip()
@@ -716,7 +794,7 @@ class PlanningTester:
             return (parts[0], parts[0], parts[0])
         return (parts[0], parts[1], parts[2])
 
-    def _get_sphere_dimensions(self) -> tuple[float]:
+    def _get_sphere_dimensions(self) -> tuple[float, ...]:
         """Get sphere dimensions."""
         print("Radius [default: 0.05]:")
         r_str = input("  Radius: ").strip()
@@ -724,7 +802,7 @@ class PlanningTester:
             return (0.05,)
         return (float(r_str),)
 
-    def _get_cylinder_dimensions(self) -> tuple[float, float]:
+    def _get_cylinder_dimensions(self) -> tuple[float, ...]:
         """Get cylinder dimensions."""
         print("Dimensions (radius, height) [default: 0.05 0.1]:")
         dims_str = input("  Dims: ").strip()
@@ -733,7 +811,7 @@ class PlanningTester:
         parts = [float(x) for x in dims_str.replace(",", " ").split()]
         return (parts[0], parts[1])
 
-    def _get_position(self, prompt: str = "Position") -> np.ndarray:
+    def _get_position(self, prompt: str = "Position") -> NDArray[np.float64]:
         """Get position from user."""
         print(f"{prompt} (x, y, z) [default: 0.3 0 0.1]:")
         pos_str = input(f"  {prompt}: ").strip()
@@ -749,28 +827,31 @@ class PlanningTester:
         h = hue * 6
         c = 0.7
         x = c * (1 - abs(h % 2 - 1))
+        r: float
+        g: float
+        b: float
         if h < 1:
-            r, g, b = c, x, 0
+            r, g, b = c, x, 0.0
         elif h < 2:
-            r, g, b = x, c, 0
+            r, g, b = x, c, 0.0
         elif h < 3:
-            r, g, b = 0, c, x
+            r, g, b = 0.0, c, x
         elif h < 4:
-            r, g, b = 0, x, c
+            r, g, b = 0.0, x, c
         elif h < 5:
-            r, g, b = x, 0, c
+            r, g, b = x, 0.0, c
         else:
-            r, g, b = c, 0, x
+            r, g, b = c, 0.0, x
         return (r + 0.3, g + 0.3, b + 0.3, 0.8)
 
-    def _format_array(self, arr: np.ndarray | None) -> str:
+    def _format_array(self, arr: NDArray[np.floating[Any]] | None) -> str:
         """Format array for display."""
         if arr is None:
             return "None"
         return "[" + ", ".join(f"{x:.4f}" for x in arr) + "]"
 
 
-def main():
+def main() -> None:
     """Run the planning tester."""
     import argparse
 

@@ -612,7 +612,8 @@ class WorldMonitor:
             URL string or None if visualization not enabled
         """
         if hasattr(self._world, "get_meshcat_url"):
-            return self._world.get_meshcat_url()
+            url = self._world.get_meshcat_url()
+            return str(url) if url else None
         return None
 
     def publish_visualization(self) -> None:
@@ -666,7 +667,8 @@ class WorldMonitor:
         period = 1.0 / self._viz_rate_hz
         while not self._viz_stop_event.is_set():
             try:
-                self._world.publish_to_meshcat()
+                if hasattr(self._world, "publish_to_meshcat"):
+                    self._world.publish_to_meshcat()
             except Exception as e:
                 logger.debug(f"Visualization publish failed: {e}")
             time.sleep(period)

@@ -225,7 +225,7 @@ def compute_error_twist(
         angular_error = axis * angle
 
     # Combine into twist with gain
-    twist = np.concatenate([pos_error * gain, angular_error * gain])
+    twist: NDArray[np.float64] = np.concatenate([pos_error * gain, angular_error * gain])
 
     return twist
 

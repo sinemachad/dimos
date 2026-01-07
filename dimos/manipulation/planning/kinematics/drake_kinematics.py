@@ -180,7 +180,7 @@ class DrakeKinematics:
                 upper_limits=upper_limits,
             )
 
-            if result.is_success():
+            if result.is_success() and result.joint_positions is not None:
                 # Check collision if requested
                 if check_collision:
                     with world.scratch_context() as ctx:
@@ -211,7 +211,7 @@ class DrakeKinematics:
 
     def _solve_single(
         self,
-        world,  # DrakeWorld
+        world: WorldSpec,
         robot_id: str,
         target_transform: RigidTransform,
         seed: NDArray[np.float64],
@@ -221,9 +221,9 @@ class DrakeKinematics:
         upper_limits: NDArray[np.float64],
     ) -> IKResult:
         """Solve IK with a single seed."""
-        # Get robot data from world internals
-        robot_data = world._robots[robot_id]
-        plant = world.plant
+        # Get robot data from world internals (Drake-specific access)
+        robot_data = world._robots[robot_id]  # type: ignore[attr-defined]
+        plant = world.plant  # type: ignore[attr-defined]
 
         # Create IK problem
         ik = InverseKinematics(plant)
@@ -234,7 +234,7 @@ class DrakeKinematics:
         # Add position constraint
         ik.AddPositionConstraint(
             frameB=ee_frame,
-            p_BQ=[0, 0, 0],
+            p_BQ=np.array([0.0, 0.0, 0.0]),
             frameA=plant.world_frame(),
             p_AQ_lower=target_transform.translation() - np.array([position_tolerance] * 3),
             p_AQ_upper=target_transform.translation() + np.array([position_tolerance] * 3),

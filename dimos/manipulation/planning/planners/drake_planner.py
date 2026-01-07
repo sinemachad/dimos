@@ -437,7 +437,7 @@ class DrakeRRTStarPlanner:
         goal_node: _RRTStarNode | None = None
         best_cost = float("inf")
 
-        for _iteration in range(max_iterations):
+        for iteration in range(max_iterations):  # noqa: B007
             if time.time() - start_time > timeout:
                 break  # Return best path found so far
 

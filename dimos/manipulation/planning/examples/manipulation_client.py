@@ -69,6 +69,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from typing import Any, cast
 
 import numpy as np
 
@@ -90,11 +91,11 @@ class ManipulationClient:
         self.module_name = "ManipulationModule"
         print("ManipulationClient connected via LCM RPC")
 
-    def _call(self, method: str, *args, **kwargs) -> any:
+    def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:
         """Call an RPC method on ManipulationModule."""
         topic = f"{self.module_name}/{method}"
         try:
-            result, _ = self.rpc.call_sync(topic, (args, kwargs), rpc_timeout=30.0)
+            result, _ = self.rpc.call_sync(topic, (list(args), kwargs), rpc_timeout=30.0)
             return result
         except TimeoutError:
             print(f"RPC call to '{method}' timed out")
@@ -105,15 +106,15 @@ class ManipulationClient:
 
     def get_state(self) -> str:
         """Get current manipulation state."""
-        return self._call("get_state_name")
+        return cast("str", self._call("get_state_name"))
 
     def get_ee_pose(self) -> list[float] | None:
         """Get current end-effector pose [x, y, z, roll, pitch, yaw]."""
-        return self._call("get_ee_pose")
+        return cast("list[float] | None", self._call("get_ee_pose"))
 
     def get_joints(self) -> list[float] | None:
         """Get current joint positions."""
-        return self._call("get_current_joints")
+        return cast("list[float] | None", self._call("get_current_joints"))
 
     def move_to_pose(
         self, x: float, y: float, z: float, roll: float = 0.0, pitch: float = 0.0, yaw: float = 0.0
@@ -122,12 +123,12 @@ class ManipulationClient:
         print(
             f"Moving to pose: ({x:.3f}, {y:.3f}, {z:.3f}) orientation: ({roll:.2f}, {pitch:.2f}, {yaw:.2f})"
         )
-        return self._call("move_to_pose", x, y, z, roll, pitch, yaw)
+        return cast("bool", self._call("move_to_pose", x, y, z, roll, pitch, yaw))
 
     def move_to_joints(self, joints: list[float]) -> bool:
         """Move to joint configuration."""
         print(f"Moving to joints: {[f'{j:.3f}' for j in joints]}")
-        return self._call("move_to_joints", joints)
+        return cast("bool", self._call("move_to_joints", joints))
 
     def add_box(
         self,
@@ -146,24 +147,27 @@ class ManipulationClient:
         print(
             f"Adding box '{name}' at ({x:.3f}, {y:.3f}, {z:.3f}) size ({width:.3f}, {height:.3f}, {depth:.3f})"
         )
-        return self._call("add_box_obstacle", name, x, y, z, width, height, depth, roll, pitch, yaw)
+        return cast(
+            "str",
+            self._call("add_box_obstacle", name, x, y, z, width, height, depth, roll, pitch, yaw),
+        )
 
     def add_sphere(self, name: str, x: float, y: float, z: float, radius: float) -> str:
         """Add a sphere obstacle."""
         print(f"Adding sphere '{name}' at ({x:.3f}, {y:.3f}, {z:.3f}) radius {radius:.3f}")
-        return self._call("add_sphere_obstacle", name, x, y, z, radius)
+        return cast("str", self._call("add_sphere_obstacle", name, x, y, z, radius))
 
     def remove_obstacle(self, obstacle_id: str) -> bool:
         """Remove an obstacle."""
-        return self._call("remove_obstacle", obstacle_id)
+        return cast("bool", self._call("remove_obstacle", obstacle_id))
 
     def clear_obstacles(self) -> bool:
         """Clear all obstacles."""
-        return self._call("clear_obstacles")
+        return cast("bool", self._call("clear_obstacles"))
 
     def reset(self) -> bool:
         """Reset manipulation state to IDLE."""
-        return self._call("reset")
+        return cast("bool", self._call("reset"))
 
     # =========================================================================
     # Plan/Preview/Execute Workflow (like planning_tester.py)
@@ -176,38 +180,38 @@ class ManipulationClient:
         print(
             f"Planning to pose: ({x:.3f}, {y:.3f}, {z:.3f}) orientation: ({roll:.2f}, {pitch:.2f}, {yaw:.2f})"
         )
-        return self._call("plan_to_pose", x, y, z, roll, pitch, yaw)
+        return cast("bool", self._call("plan_to_pose", x, y, z, roll, pitch, yaw))
 
     def plan_to_joints(self, joints: list[float]) -> bool:
         """Plan motion to joints WITHOUT executing. Use preview() then execute()."""
         print(f"Planning to joints: {[f'{j:.3f}' for j in joints]}")
-        return self._call("plan_to_joints", joints)
+        return cast("bool", self._call("plan_to_joints", joints))
 
     def preview(self, speed: float = 1.0) -> bool:
         """Preview the planned path in Drake/Meshcat visualizer."""
         print(f"Previewing path in Drake (speed={speed}x)...")
-        return self._call("preview_path_in_drake", speed)
+        return cast("bool", self._call("preview_path_in_drake", speed))
 
     def execute(self) -> bool:
         """Execute the planned trajectory (send to MuJoCo/controller)."""
         print("Executing planned trajectory...")
-        return self._call("execute_planned")
+        return cast("bool", self._call("execute_planned"))
 
     def has_plan(self) -> bool:
         """Check if there's a planned path ready."""
-        return self._call("has_planned_path")
+        return cast("bool", self._call("has_planned_path"))
 
     def get_viz_url(self) -> str:
         """Get the Meshcat visualization URL."""
-        return self._call("get_visualization_url")
+        return cast("str", self._call("get_visualization_url"))
 
     def is_collision_free(self, joints: list[float]) -> bool:
         """Check if joint configuration is collision-free."""
-        return self._call("is_collision_free", joints)
+        return cast("bool", self._call("is_collision_free", joints))
 
-    def get_debug_info(self) -> dict:
+    def get_debug_info(self) -> dict[str, Any]:
         """Get debug info about joint state flow."""
-        return self._call("get_debug_info")
+        return cast("dict[str, Any]", self._call("get_debug_info"))
 
     def stop(self) -> None:
         """Stop the RPC client."""

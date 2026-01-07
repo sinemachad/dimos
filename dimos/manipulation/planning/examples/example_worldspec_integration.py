@@ -128,7 +128,7 @@ def create_table_obstacle() -> Obstacle:
 # =============================================================================
 
 
-def example_basic_planning():
+def example_basic_planning() -> None:
     """Basic example: create world, solve IK, plan path."""
 
     print("=" * 60)
@@ -292,7 +292,7 @@ def example_basic_planning():
 # =============================================================================
 
 
-def example_with_monitor():
+def example_with_monitor() -> None:
     """Example using WorldMonitor for reactive state updates."""
 
     print("=" * 60)
@@ -414,7 +414,7 @@ def example_with_monitor():
 # =============================================================================
 
 
-def example_full_integration():
+def example_full_integration() -> None:
     """Full integration: monitor + kinematics + planner."""
 
     print("=" * 60)
@@ -489,7 +489,7 @@ def example_full_integration():
         seed=q_start,
     )
 
-    if not ik_result.is_success():
+    if not ik_result.is_success() or ik_result.joint_positions is None:
         print(f"   IK failed: {ik_result.message}")
         return
 
@@ -555,7 +555,7 @@ def example_full_integration():
 # =============================================================================
 
 
-def main():
+def main() -> None:
     """Run examples."""
     print("\nWorldSpec Integration Examples")
     print("=" * 60)
