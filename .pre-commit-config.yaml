@@ -77,6 +77,13 @@ repos:
         entry: bin/lfs_check
         language: script
 
+      - id: largefiles-check
+        name: Large files check
+        always_run: true
+        pass_filenames: false
+        entry: bin/largefiles_check
+        language: script
+
       - id: doclinks
         name: Doclinks
         always_run: true
