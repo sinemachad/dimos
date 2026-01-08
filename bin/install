@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+# stop on error
+set -e
+
+#
+# stage0.1 tools (curl, wget, unzip, etc)
+#
+echo "- bootstrapping, stage 0.1"
+
+# posix altnerative to "which"
+has () {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Ensure at least one downloader exists
+if ! has curl && ! has wget; then
+    echo "Sorry, this script requires either curl or wget."
+    echo "Please install one of them and re-run this script."
+    exit 1
+fi
+
+# usage: download <url> <output_path>, uses either wget or curl
+download () {
+    if has curl; then
+        curl --fail --location --progress-bar --output "$2" "$1"
+    else
+        wget --quiet --show-progress --output-document="$2" "$1"
+    fi
+}
+
+# tar is needed to unpack python-build-standalone tar.gz assets
+if ! has tar; then
+    echo "Sorry this script needs 'tar' (and gzip support) to unpack Python"
+    exit 1
+fi
+
+#
+# stage0.2: download standalone Python 3.10
+#
+echo "- bootstrapping, stage 0.2"
+
+# Pick a known python-build-standalone release + CPython 3.10 build
+# From the 20251217 release assets: cpython-3.10.19+20251217-<target>-install_only.tar.gz :contentReference[oaicite:1]{index=1}
+export PYTHON_BUILD_STANDALONE_RELEASE="20251217"
+export PYTHON_VERSION="3.10.19"
+export PYTHON_BUILD_TAG="${PYTHON_VERSION}+${PYTHON_BUILD_STANDALONE_RELEASE}"
+
+export PYTHON_INSTALL="$HOME/.python/${PYTHON_BUILD_TAG}"
+
+# Determine target triple (POSIX only: macOS/Linux)
+case "$(uname -sm)" in
+  "Darwin x86_64") target="x86_64-apple-darwin" ;;
+  "Darwin arm64")  target="aarch64-apple-darwin" ;;
+  "Linux aarch64") target="aarch64-unknown-linux-gnu" ;;
+  "Linux x86_64")  target="x86_64-unknown-linux-gnu" ;;
+  *)
+    echo "Unsupported platform: $(uname -sm)"
+    echo "Supported: macOS (x86_64/arm64), Linux (x86_64/aarch64)"
+    exit 1
+    ;;
+esac
+
+python_uri="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_BUILD_STANDALONE_RELEASE}/cpython-${PYTHON_BUILD_TAG}-${target}-install_only.tar.gz"
+python_exe="$PYTHON_INSTALL/bin/python3"
+
+if [ ! -x "$python_exe" ]; then
+  mkdir -p "$PYTHON_INSTALL"
+
+  tmp_tar="$PYTHON_INSTALL/python.tar.gz"
+  download "$python_uri" "$tmp_tar"
+
+  # The tarball contains a top-level "python/" directory; strip it into PYTHON_INSTALL
+  # (works with GNU tar and BSD tar)
+  tar -xzf "$tmp_tar" -C "$PYTHON_INSTALL" --strip-components=1
+
+  rm -f "$tmp_tar"
+  chmod +x "$python_exe" || true
+fi
+
+#
+# stage0.3: use Python to run the rest
+#
+echo "- bootstrapping, stage 0.3"
+
+"$python_exe" -c '
+print("- bootstrapping, stage 0.4: temp python loaded")
+import os, sys, urllib.request, tempfile, runpy
+
+uri = "https://github.com/dimensionalOS/dimos/raw/refs/heads/main/installer.pyz"
+print(f"- getting stage 1 installer from: {uri}", file=sys.stderr)
+
+with urllib.request.urlopen(uri) as r:
+    pyz_bytes = r.read()
+
+fd, tmp_path = tempfile.mkstemp(suffix=".pyz")
+try:
+    with os.fdopen(fd, "wb") as f:
+        f.write(pyz_bytes)
+
+    sys.argv = [tmp_path, *sys.argv[1:]]
+    sys.path[0] = tmp_path
+    print(f"- running stage 1 installer" + ("\n"*30), file=sys.stderr)
+    runpy.run_path(tmp_path, run_name="__main__")
+finally:
+    try: os.remove(tmp_path)
+    except OSError: pass
+' "$@"
