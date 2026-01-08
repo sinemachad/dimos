@@ -55,6 +55,7 @@ all_blueprints = {
     "orchestrator-piper": "dimos.control.blueprints:orchestrator_piper",
     "orchestrator-dual-mock": "dimos.control.blueprints:orchestrator_dual_mock",
     "orchestrator-dual-xarm": "dimos.control.blueprints:orchestrator_dual_xarm",
+    "orchestrator-piper-xarm": "dimos.control.blueprints:orchestrator_piper_xarm",
     # Demo blueprints
     "demo-osm": "dimos.mapping.osm.demo_osm:demo_osm",
     "demo-skill": "dimos.agents.skills.demo_skill:demo_skill",

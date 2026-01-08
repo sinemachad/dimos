@@ -127,13 +127,13 @@ orchestrator_xarm6 = control_orchestrator(
             type="xarm",
             dof=6,
             joint_prefix="arm",
-            ip="192.168.1.185",
+            ip="192.168.1.210",
             auto_enable=True,
         ),
     ],
     tasks=[
         TaskConfig(
-            name="traj_arm",
+            name="traj_xarm",
             type="trajectory",
             joint_names=_joint_names("arm", 6),
             priority=10,
@@ -162,7 +162,7 @@ orchestrator_piper = control_orchestrator(
     ],
     tasks=[
         TaskConfig(
-            name="traj_arm",
+            name="traj_piper",
             type="trajectory",
             joint_names=_joint_names("arm", 6),
             priority=10,
@@ -260,6 +260,49 @@ orchestrator_dual_xarm = control_orchestrator(
     }
 )
 
+# Dual Arm setup (XArm6 , Piper )
+orchestrator_piper_xarm = control_orchestrator(
+    tick_rate=100.0,
+    publish_joint_state=True,
+    joint_state_frame_id="orchestrator",
+    hardware=[
+        HardwareConfig(
+            id="xarm_arm",
+            type="xarm",
+            dof=6,
+            joint_prefix="xarm",
+            ip="192.168.1.210",
+            auto_enable=True,
+        ),
+        HardwareConfig(
+            id="piper_arm",
+            type="piper",
+            dof=6,
+            joint_prefix="piper",
+            can_port="can0",
+            auto_enable=True,
+        ),
+    ],
+    tasks=[
+        TaskConfig(
+            name="traj_xarm",
+            type="trajectory",
+            joint_names=_joint_names("xarm", 6),
+            priority=10,
+        ),
+        TaskConfig(
+            name="traj_piper",
+            type="trajectory",
+            joint_names=_joint_names("piper", 6),
+            priority=10,
+        ),
+    ],
+).transports(
+    {
+        ("joint_state", JointState): LCMTransport("/orchestrator/joint_state", JointState),
+    }
+)
+
 # =============================================================================
 # High-frequency Blueprints (200Hz)
 # =============================================================================
@@ -318,6 +361,7 @@ __all__ = [
     # Single arm blueprints
     "orchestrator_mock",
     "orchestrator_piper",
+    "orchestrator_piper_xarm",
     "orchestrator_xarm6",
     "orchestrator_xarm7",
 ]

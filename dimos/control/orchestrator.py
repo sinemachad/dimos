@@ -302,6 +302,17 @@ class ControlOrchestrator(Module[ControlOrchestratorConfig]):
         with self._hardware_lock:
             return list(self._joint_to_hardware.keys())
 
+    @rpc
+    def get_joint_positions(self) -> dict[str, float]:
+        """Get current joint positions for all joints."""
+        with self._hardware_lock:
+            positions: dict[str, float] = {}
+            for hw in self._hardware.values():
+                state = hw.read_state()  # {joint_name: (pos, vel, effort)}
+                for joint_name, (pos, _vel, _effort) in state.items():
+                    positions[joint_name] = pos
+            return positions
+
     # =========================================================================
     # Task Management (RPC)
     # =========================================================================
