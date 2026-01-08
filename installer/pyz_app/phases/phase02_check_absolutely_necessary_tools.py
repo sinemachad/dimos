@@ -31,7 +31,7 @@ from ..support.misc import (
     get_project_directory,
 )
 from ..support.shell_tooling import command_exists, run_command
-from ..support.venv import activate_venv, get_venv_dirs_at, purge_broken_external_venv
+from ..support.venv import activate_venv, get_venv_dirs_at, purge_broken_external_venv, deactivate_external
 
 
 def phase2(system_analysis, selected_features):
@@ -92,7 +92,11 @@ def ensure_venv_active(python_cmd: str):
     active_venv = os.environ.get("VIRTUAL_ENV")
     if active_venv:
         p.boring_log(f"- detected active virtual environment: {active_venv}")
-        return active_venv
+        if not Path(active_venv).exists():
+            p.warning(f"the virtual environment at {active_venv} doesn't exist - deactivating")
+            deactivate_external()
+        else:
+            return active_venv
 
     project_directory = get_project_directory()
     possible_venv_dirs = get_venv_dirs_at(project_directory)

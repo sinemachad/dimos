@@ -31,11 +31,12 @@ def phase3(selected_features: Iterable[str] | None) -> None:
     features = list(selected_features) if selected_features else []
     p.header("Next Phase: UV Pip Installing Dimos")
     if not command_exists("uv"):
+        p.boring_log("- uv doesnt exist, installing it")
         res = run_command(["pip", "install", "uv"], print_command=True)
 
-    # some setup.py's (contact_graspnet_pytorch) require numpy (so pip itself will fail while trying to install them)
-    # so we preinstall numpy
+    p.boring_log(" - running main install")
     res = run_command(["uv", "pip", "install", "numpy"], print_command=True)
+    
     selected_features_string = ""
     if features:
         selected_features_string = f"[{','.join(features)}]"
