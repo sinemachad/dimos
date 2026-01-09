@@ -175,6 +175,7 @@ class BackendHardwareInterface:
             return False
         else:
             return False
+
     def _initialize_last_commanded(self) -> None:
         """Initialize last_commanded with current hardware positions."""
         try:
