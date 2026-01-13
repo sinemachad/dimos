@@ -15,11 +15,11 @@
 import numpy as np
 from numpy.linalg import norm, solve
 import pinocchio
- 
+
 mjcf_path = "/home/ruthwik/Documents/dimos/dimos/simulation/manipulators/data/xarm6/xarm6.xml"
 model = pinocchio.buildModelFromMJCF(mjcf_path)
 data = model.createData()
- 
+
 JOINT_ID = 6  # joint6 is the end-effector for xarm6
 
 # Target position
@@ -30,7 +30,7 @@ roll, pitch, yaw = np.radians([180, 90, 0])  # change these values
 rotation = pinocchio.rpy.rpyToMatrix(roll, pitch, yaw)
 
 oMdes = pinocchio.SE3(rotation, position)
- 
+
 q = pinocchio.neutral(model)
 eps = 1e-4
 IT_MAX = 1000
