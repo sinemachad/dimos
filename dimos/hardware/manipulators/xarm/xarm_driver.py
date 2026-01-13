@@ -59,6 +59,7 @@ class XArmDriver(BaseManipulatorDriver):
             "has_force_torque",
             "control_rate",
             "monitor_rate",
+            "connection_type",
         ]
         for param in driver_params:
             if param in kwargs:
@@ -114,6 +115,7 @@ def get_blueprint() -> dict[str, Any]:
             "has_force_torque": False,
             "control_rate": 100,  # Hz - control loop + joint feedback
             "monitor_rate": 10,  # Hz - robot state monitoring
+            "connection_type": "hardware",  # "hardware" or "sim"
         },
         "inputs": {
             "joint_position_command": "JointCommand",
