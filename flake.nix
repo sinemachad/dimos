@@ -260,7 +260,8 @@
               home.homeDirectory = "/tmp/virtual_homes/dimos";
               home.stateVersion = "25.11";
               home.packages = groups.devPackages;
-              targets.darwin = {copyApps.enable = false; linkApps.enable = true;}; # https://github.com/nix-community/home-manager/issues/8336
+              # https://github.com/nix-community/home-manager/issues/8336
+              targets = if pkgs.stdenv.isLinux then {} else { darwin = {copyApps.enable = false; linkApps.enable = true;}; };
 
               programs = {
                 home-manager = {
