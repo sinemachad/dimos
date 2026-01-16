@@ -20,8 +20,10 @@ import threading
 import time
 
 import mujoco
-import mujoco.viewer as viewer
-from robot_descriptions.loaders.mujoco import load_robot_description
+import mujoco.viewer as viewer  # type: ignore[import-untyped]
+from robot_descriptions.loaders.mujoco import (
+    load_robot_description,  # type: ignore[import-not-found]
+)
 
 from dimos.utils.logging_config import setup_logger
 
@@ -62,7 +64,7 @@ class MujocoSimBackend:
             self._model = load_robot_description(robot)
 
         self._data = mujoco.MjData(self._model)
-        self._num_joints = self._model.nq
+        self._num_joints: int = int(self._model.nq)
         timestep = float(self._model.opt.timestep)
         self._control_frequency = 1.0 / timestep if timestep > 0.0 else 100.0
 

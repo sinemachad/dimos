@@ -25,7 +25,7 @@ from dimos.simulation.manipulators.mujoco_driver import mujoco_sim
 xarm7_trajectory_sim = mujoco_sim(
     robot="xarm7_mj_description",
     config_path=None,
-    headless=True,
+    headless=False,
 ).transports(
     {
         ("joint_state", JointState): LCMTransport("/xarm/joint_states", JointState),
