@@ -51,7 +51,7 @@ class PersonFollowSkillContainer(SkillModule):
     """
 
     color_image: In[Image]
-    global_pointcloud: In[PointCloud2]
+    global_map: In[PointCloud2]
     cmd_vel: Out[Twist]
 
     _frequency: float = 20.0  # Hz - control loop frequency
@@ -61,7 +61,7 @@ class PersonFollowSkillContainer(SkillModule):
         self,
         camera_info: CameraInfo,
         global_config: GlobalConfig,
-        use_3d_navigation: bool = False,
+        use_3d_navigation: bool = True,
     ) -> None:
         super().__init__()
         self._global_config: GlobalConfig = global_config
@@ -88,7 +88,7 @@ class PersonFollowSkillContainer(SkillModule):
         super().start()
         self._disposables.add(Disposable(self.color_image.subscribe(self._on_color_image)))
         if self._use_3d_navigation:
-            self._disposables.add(Disposable(self.global_pointcloud.subscribe(self._on_pointcloud)))
+            self._disposables.add(Disposable(self.global_map.subscribe(self._on_pointcloud)))
 
     @rpc
     def stop(self) -> None:

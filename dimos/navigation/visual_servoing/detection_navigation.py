@@ -15,7 +15,7 @@
 from dimos_lcm.sensor_msgs import CameraInfo as DimosLcmCameraInfo
 import numpy as np
 
-from dimos.msgs.geometry_msgs import Twist, Vector3
+from dimos.msgs.geometry_msgs import Transform, Twist, Vector3
 from dimos.msgs.sensor_msgs import CameraInfo, Image, PointCloud2
 from dimos.perception.detection.type.detection2d.bbox import Detection2DBBox
 from dimos.perception.detection.type.detection3d import Detection3DPC
@@ -79,38 +79,94 @@ class DetectionNavigation:
             logger.warning("3D projection failed")
             return None
 
-        # Navigate towards the 3D center of the detection
-        target_position = detection_3d.center
-        logger.info(
-            f"3D target position: ({target_position.x:.2f}, {target_position.y:.2f}, {target_position.z:.2f})"
-        )
+        # Get robot position to compute robust target
+        robot_transform = self._tf.get("world", "base_link", time_tolerance=1.0)
+        if robot_transform is None:
+            logger.warning("Could not get robot transform")
+            return None
 
-        return self._compute_twist_from_3d(target_position)
+        robot_pos = robot_transform.translation
 
-    def _compute_twist_from_3d(self, target_position: Vector3) -> Twist:
+        # Compute robust target position using front-most points
+        target_position = self._compute_robust_target_position(detection_3d.pointcloud, robot_pos)
+        if target_position is None:
+            logger.warning("Could not compute robust target position")
+            return None
+
+        return self._compute_twist_from_3d(target_position, robot_transform)
+
+    def _compute_robust_target_position(
+        self, pointcloud: PointCloud2, robot_pos: Vector3
+    ) -> Vector3 | None:
+        """Compute a robust target position from the detection pointcloud.
+
+        Instead of using the centroid of all points (which includes floor/background),
+        this method:
+        1. Filters out floor points (z < 0.3m in world frame)
+        2. Computes distance from robot to each remaining point
+        3. Uses the 25th percentile of closest points to get the front surface
+        4. Returns the centroid of those front-most points
+
+        Args:
+            pointcloud: The detection's pointcloud in world frame
+            robot_pos: Robot's current position in world frame
+
+        Returns:
+            Vector3 position representing the front of the detected object,
+            or None if not enough valid points.
+        """
+        points, _ = pointcloud.as_numpy()
+        if len(points) < 10:
+            return None
+
+        # Filter out floor points (keep points above 0.3m height)
+        height_mask = points[:, 2] > 0.3
+        points = points[height_mask]
+        if len(points) < 10:
+            # Fall back to all points if height filtering removes too many
+            points, _ = pointcloud.as_numpy()
+
+        # Compute 2D distance (XY plane) from robot to each point
+        dx = points[:, 0] - robot_pos.x
+        dy = points[:, 1] - robot_pos.y
+        distances = np.sqrt(dx * dx + dy * dy)
+
+        # Use 25th percentile of distances to find front-most points
+        distance_threshold = np.percentile(distances, 25)
+
+        # Get points that are within the front 25%
+        front_mask = distances <= distance_threshold
+        front_points = points[front_mask]
+
+        if len(front_points) < 3:
+            # Fall back to median distance point
+            median_dist = np.median(distances)
+            close_mask = np.abs(distances - median_dist) < 0.3
+            front_points = points[close_mask]
+            if len(front_points) < 3:
+                return None
+
+        # Compute centroid of front-most points
+        centroid = front_points.mean(axis=0)
+        return Vector3(centroid[0], centroid[1], centroid[2])
+
+    def _compute_twist_from_3d(self, target_position: Vector3, robot_transform: Transform) -> Twist:
         """Compute twist command to navigate towards a 3D target position.
-
-        The target position is in world frame. We use the robot's base_link transform
-        to determine relative position and compute appropriate velocities.
 
         Args:
             target_position: 3D position of the target in world frame.
+            robot_transform: Robot's current transform in world frame.
 
         Returns:
             Twist command for the robot.
         """
-        # Get robot's current position in world frame
-        robot_transform = self._tf.get("world", "base_link", time_tolerance=1.0)
-        if robot_transform is None:
-            logger.warning("Could not get robot transform for 3D navigation")
-            return Twist.zero()
-
         robot_pos = robot_transform.translation
 
         # Compute vector from robot to target in world frame
         dx = target_position.x - robot_pos.x
         dy = target_position.y - robot_pos.y
         distance = np.sqrt(dx * dx + dy * dy)
+        print(f"Distance to target: {distance:.2f} m")
 
         # Compute angle to target in world frame
         angle_to_target = np.arctan2(dy, dx)
