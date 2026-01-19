@@ -304,7 +304,7 @@ class ModuleBlueprintSet:
             for requested_method_name in instance.get_rpc_method_names():  # type: ignore[union-attr]
                 self._check_ambiguity(
                     requested_method_name, interface_methods_dot, blueprint.module
-                )
+                    )
 
                 if requested_method_name not in rpc_methods_dot:
                     continue
