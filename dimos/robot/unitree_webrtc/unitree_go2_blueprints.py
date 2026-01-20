@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
 import platform
 
 from dimos_lcm.foxglove_msgs.ImageAnnotations import (
@@ -26,16 +27,25 @@ from dimos.agents.cli.human import human_input
 from dimos.agents.cli.web import web_input
 from dimos.agents.ollama_agent import ollama_installed
 from dimos.agents.skills.navigation import navigation_skill
+from dimos.agents.skills.person_follow import person_follow_skill
 from dimos.agents.skills.speak_skill import speak_skill
 from dimos.agents.spec import Provider
 from dimos.agents.vlm_agent import vlm_agent
 from dimos.agents.vlm_stream_tester import vlm_stream_tester
 from dimos.constants import DEFAULT_CAPACITY_COLOR_IMAGE
 from dimos.core.blueprints import autoconnect
-from dimos.core.transport import JpegLcmTransport, JpegShmTransport, LCMTransport, pSHMTransport
+from dimos.core.transport import (
+    JpegLcmTransport,
+    JpegShmTransport,
+    LCMTransport,
+    ROSTransport,
+    pSHMTransport,
+)
 from dimos.dashboard.tf_rerun_module import tf_rerun
 from dimos.mapping.costmapper import cost_mapper
 from dimos.mapping.voxels import voxel_mapper
+from dimos.msgs.geometry_msgs import PoseStamped
+from dimos.msgs.nav_msgs import OccupancyGrid
 from dimos.msgs.sensor_msgs import Image, PointCloud2
 from dimos.msgs.vision_msgs import Detection2DArray
 from dimos.navigation.frontier_exploration import (
@@ -45,13 +55,17 @@ from dimos.navigation.replanning_a_star.module import (
     replanning_a_star_planner,
 )
 from dimos.perception.detection.module3D import Detection3DModule, detection3d_module
+from dimos.perception.experimental.temporal_memory import temporal_memory
 from dimos.perception.spatial_perception import spatial_memory
 from dimos.protocol.mcp.mcp import MCPModule
 from dimos.robot.foxglove_bridge import foxglove_bridge
+import dimos.robot.unitree.connection.go2 as _go2_mod
 from dimos.robot.unitree.connection.go2 import GO2Connection, go2_connection
 from dimos.robot.unitree_webrtc.unitree_skill_container import unitree_skills
 from dimos.utils.monitoring import utilization
 from dimos.web.websocket_vis.websocket_vis_module import websocket_vis
+
+_GO2_URDF = Path(_go2_mod.__file__).parent.parent / "go2" / "go2.urdf"
 
 # Mac has some issue with high bandwidth UDP
 #
@@ -78,7 +92,12 @@ basic = autoconnect(
     go2_connection(),
     linux if platform.system() == "Linux" else mac,
     websocket_vis(),
-    tf_rerun(),  # Auto-visualize all TF transforms in Rerun
+    tf_rerun(
+        urdf_path=str(_GO2_URDF),
+        cameras=[
+            ("world/robot/camera", "camera_optical", GO2Connection.camera_info_static),
+        ],
+    ),
 ).global_config(n_dask_workers=4, robot_model="unitree_go2")
 
 nav = autoconnect(
@@ -88,6 +107,15 @@ nav = autoconnect(
     replanning_a_star_planner(),
     wavefront_frontier_explorer(),
 ).global_config(n_dask_workers=6, robot_model="unitree_go2")
+
+ros = nav.transports(
+    {
+        ("lidar", PointCloud2): ROSTransport("lidar", PointCloud2),
+        ("global_map", PointCloud2): ROSTransport("global_map", PointCloud2),
+        ("odom", PoseStamped): ROSTransport("odom", PoseStamped),
+        ("color_image", Image): ROSTransport("color_image", Image),
+    }
+)
 
 detection = (
     autoconnect(
@@ -132,7 +160,13 @@ detection = (
 
 spatial = autoconnect(
     nav,
-    spatial_memory(),
+    # TODO: Turn back on. Turned off to stop logging.
+    # EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+    # EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+    # EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+    # EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+    # EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+    # spatial_memory(),
     utilization(),
 ).global_config(n_dask_workers=8)
 
@@ -158,6 +192,7 @@ with_jpegshm = autoconnect(
 _common_agentic = autoconnect(
     human_input(),
     navigation_skill(),
+    person_follow_skill(camera_info=GO2Connection.camera_info_static),
     unitree_skills(),
     web_input(),
     speak_skill(),
@@ -198,4 +233,9 @@ vlm_stream_test = autoconnect(
     basic,
     vlm_agent(),
     vlm_stream_tester(),
+)
+
+temporal_memory = autoconnect(
+    agentic,
+    temporal_memory(),
 )
