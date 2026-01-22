@@ -56,15 +56,17 @@ aruco_tracker_realsense = (
             align_depth_to_color=False,
         ),
         aruco_tracker(
-            marker_size=0.015,  # 15mm markers (default)
+            # ArUco detection
+            marker_size=0.015,
             aruco_dict=cv2.aruco.DICT_4X4_50,
+            expected_marker_count=4,
+            # Processing
             camera_frame_id="camera_color_optical_frame",
             rate=15,
             max_loops=10000,
+            # Robot control
             move_robot_to_aruco=False,
-            robot_connected=False,  # No robot, use dummy EE transform
-            expected_marker_count=4,
-            # IK config (required even when not moving robot)
+            # IK
             mjcf_path=_XARM6_MJCF_PATH,
             ee_joint_id=6,
         ),
@@ -110,21 +112,22 @@ aruco_tracker_realsense_xarm6 = (
             align_depth_to_color=False,
         ),
         aruco_tracker(
-            marker_size=0.015,  # 15mm markers
+            # ArUco detection
+            marker_size=0.015,
             aruco_dict=cv2.aruco.DICT_4X4_50,
+            expected_marker_count=4,
+            # Processing
             camera_frame_id="camera_color_optical_frame",
             rate=4,
             max_loops=10000,
+            # Robot control
             move_robot_to_aruco=True,
-            move_robot_to_aruco_rotation=False,  # Fixed orientation for safety
-            robot_connected=True,
-            expected_marker_count=4,
-            # IK config
+            move_robot_to_aruco_rotation=False,
+            # IK
             mjcf_path=_XARM6_MJCF_PATH,
             ee_joint_id=6,
-            hardware_id="arm",
-            task_name="traj_xarm",  # Task for OrchestratorClient trajectory execution
-            min_move_distance_m=0.005,  # Minimum EE movement (meters) to trigger trajectory
+            task_name="traj_xarm",
+            min_move_distance_m=0.005,
         ),
     )
     .transports(
