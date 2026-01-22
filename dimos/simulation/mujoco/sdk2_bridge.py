@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import threading
+import time
 from typing import TYPE_CHECKING, Any
 
 import mujoco
@@ -191,6 +192,11 @@ class SDK2BridgeController:
         self._cmd_kd = np.zeros(self.num_motors, dtype=np.float32)
         self._cmd_tau = np.zeros(self.num_motors, dtype=np.float32)
 
+        # When MuJoCo is reset (viewer backspace), the simulator state teleports but the external
+        # policy runner keeps publishing mid-gait targets. Ignore commands briefly after a reset
+        # and fall back to hold-position PD so the policy can re-stabilize.
+        self._ignore_commands_until: float = 0.0
+
         # Default PD gains for holding position
         # IMPORTANT: These should match the policy's trained gains to avoid stiffness discontinuity
         # when switching from hold-position to policy control.
@@ -332,6 +338,11 @@ class SDK2BridgeController:
         PD loop and can destabilize the policy.
         """
         with self._data_lock:
+            # If MuJoCo was just reset, drop commands briefly to avoid applying mid-gait targets
+            # to a freshly reset (standing) robot state.
+            if self._ignore_commands_until > time.time():
+                return
+
             # Mark that we've received commands - stop holding position
             if not self._commands_received:
                 self._commands_received = True
@@ -358,6 +369,38 @@ class SDK2BridgeController:
                 self._cmd_kp[i] = float(msg.motor_cmd[i].kp)
                 self._cmd_kd[i] = float(msg.motor_cmd[i].kd)
                 self._cmd_tau[i] = float(msg.motor_cmd[i].tau)
+
+    def on_mujoco_reset(self, *, grace_period_s: float = 0.2) -> None:
+        """Handle MuJoCo viewer reset (e.g., backspace).
+
+        MuJoCo resets `data` state, but SDK2 runs out-of-process. Without this hook, the bridge
+        would immediately apply stale cached targets (mid-gait) to a freshly reset pose, causing
+        large transients and falls.
+        """
+        with self._data_lock:
+            self._commands_received = False
+
+            # Re-anchor hold-position target to the newly reset pose.
+            import numpy as np
+
+            self._initial_joint_pos = np.array(
+                [self._get_joint_pos(i) for i in range(self.num_motors)],
+                dtype=np.float32,
+            )
+
+            # Drop cached targets so no stale PD is applied.
+            self._cmd_q.fill(0.0)
+            self._cmd_dq.fill(0.0)
+            self._cmd_kp.fill(0.0)
+            self._cmd_kd.fill(0.0)
+            self._cmd_tau.fill(0.0)
+
+            self._ignore_commands_until = time.time() + float(grace_period_s)
+
+        logger.info(
+            "SDK2 bridge: MuJoCo reset detected; returning to hold-position mode",
+            grace_period_s=float(grace_period_s),
+        )
 
     def _apply_policy_pd_control(self) -> None:
         """Apply per-step PD control using the latest cached LowCmd targets.

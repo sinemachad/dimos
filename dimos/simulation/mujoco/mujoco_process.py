@@ -243,6 +243,8 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
         acc_lidar_shm_s = 0.0
         next_report_t = time.perf_counter() + profiler_interval_s
 
+        last_sim_time = float(data.time)
+
         while m_viewer.is_running() and not shm.should_stop():
             step_start = time.time()
             time.perf_counter()
@@ -255,6 +257,13 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
                 if sdk2_bridge is not None:
                     sdk2_bridge.publish_state()
             acc_step_s += time.perf_counter() - t0
+
+            # Detect MuJoCo viewer reset (e.g. backspace). Reset typically makes time jump backwards.
+            if sdk2_bridge is not None:
+                sim_time = float(data.time)
+                if sim_time + 1e-9 < last_sim_time:
+                    sdk2_bridge.on_mujoco_reset()
+                last_sim_time = sim_time
 
             t0 = time.perf_counter()
             m_viewer.sync()
