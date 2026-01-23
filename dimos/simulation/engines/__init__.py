@@ -1,8 +1,7 @@
 """Simulation engines for manipulator backends."""
 
-from dimos.simulation.engines.base import RobotSpec, SimulationEngine
+from dimos.simulation.engines.base import SimulationEngine
 
 __all__ = [
-    "RobotSpec",
     "SimulationEngine",
 ]

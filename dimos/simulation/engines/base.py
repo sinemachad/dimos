@@ -12,43 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Base interfaces for simulator engines and robot specs."""
+"""Base interfaces for simulator engines."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from dimos.hardware.manipulators.spec import JointLimits
-
-
-@dataclass(frozen=True)
-class RobotSpec:
-    """Robot description metadata for simulation engines."""
-
-    name: str
-    engine: str
-    asset: str | None = None
-    dof: int | None = None
-    joint_names: list[str] | None = None
-    limits: JointLimits | None = None
-    vendor: str | None = None
-    model: str | None = None
 
 
 class SimulationEngine(ABC):
     """Abstract base class for a simulator engine instance."""
 
-    def __init__(self, spec: RobotSpec, config_path: str | None, headless: bool) -> None:
-        self._spec = spec
+    def __init__(self, config_path: str | None, headless: bool) -> None:
         self._config_path = config_path
         self._headless = headless
-
-    @property
-    def spec(self) -> RobotSpec:
-        return self._spec
 
     @property
     def config_path(self) -> str | None:
@@ -75,6 +51,11 @@ class SimulationEngine(ABC):
     @abstractmethod
     def num_joints(self) -> int:
         """Number of joints for the loaded robot."""
+
+    @property
+    @abstractmethod
+    def joint_names(self) -> list[str]:
+        """Joint names for the loaded robot."""
 
     @abstractmethod
     def read_joint_positions(self) -> list[float]:

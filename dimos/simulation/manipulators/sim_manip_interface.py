@@ -23,17 +23,17 @@ from typing import TYPE_CHECKING
 from dimos.hardware.manipulators.spec import ControlMode, JointLimits, ManipulatorInfo
 
 if TYPE_CHECKING:
-    from dimos.simulation.engines.base import RobotSpec, SimulationEngine
+    from dimos.simulation.engines.base import SimulationEngine
 
 
 class SimManipInterface:
     """Adapter wrapper around a simulation engine to provide a uniform manipulator API."""
 
-    def __init__(self, engine: SimulationEngine, spec: RobotSpec) -> None:
+    def __init__(self, engine: SimulationEngine) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self._engine = engine
-        self._spec = spec
-        self._dof = int(spec.dof) if spec.dof is not None else 0
+        self._joint_names = list(engine.joint_names)
+        self._dof = len(self._joint_names)
         self._connected = False
         self._servos_enabled = False
         self._control_mode = ControlMode.POSITION
@@ -48,9 +48,12 @@ class SimManipInterface:
             if self._engine.connected:
                 self._connected = True
                 self._servos_enabled = True
-                if self._dof <= 0:
-                    self._dof = int(self._engine.num_joints)
-                self.logger.info("Successfully connected to simulation", extra={"dof": self._dof})
+                self._joint_names = list(self._engine.joint_names)
+                self._dof = len(self._joint_names)
+                self.logger.info(
+                    "Successfully connected to simulation",
+                    extra={"dof": self._dof},
+                )
                 return True
             self.logger.error("Failed to connect to simulation engine")
             return False
@@ -69,9 +72,9 @@ class SimManipInterface:
         return bool(self._connected and self._engine.connected)
 
     def get_info(self) -> ManipulatorInfo:
-        vendor = self._spec.vendor or "Simulation"
-        model = self._spec.model or self._spec.name
-        dof = self.get_dof()
+        vendor = "Simulation"
+        model = "Simulation"
+        dof = self._dof
         return ManipulatorInfo(
             vendor=vendor,
             model=model,
@@ -83,9 +86,10 @@ class SimManipInterface:
     def get_dof(self) -> int:
         return self._dof
 
+    def get_joint_names(self) -> list[str]:
+        return list(self._joint_names)
+
     def get_limits(self) -> JointLimits:
-        if self._spec.limits is not None:
-            return self._spec.limits
         lower = [-math.pi] * self._dof
         upper = [math.pi] * self._dof
         max_vel_rad = math.radians(180.0)

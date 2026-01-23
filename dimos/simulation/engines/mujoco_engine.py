@@ -22,9 +22,9 @@ import time
 
 import mujoco
 import mujoco.viewer as viewer  # type: ignore[import-untyped]
-from robot_descriptions.loaders.mujoco import load_robot_description
 
-from dimos.simulation.engines.base import RobotSpec, SimulationEngine
+from dimos.simulation.engines.base import SimulationEngine
+from dimos.simulation.manipulators.xml_parser import JointMapping, build_joint_mappings
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
@@ -39,24 +39,17 @@ class MujocoEngine(SimulationEngine):
     - applies control commands
     """
 
-    def __init__(self, spec: RobotSpec, config_path: str | None, headless: bool) -> None:
-        super().__init__(spec=spec, config_path=config_path, headless=headless)
+    def __init__(self, config_path: str | None, headless: bool) -> None:
+        super().__init__(config_path=config_path, headless=headless)
 
-        self._robot_name = spec.asset or spec.name
-        if not self._robot_name:
-            raise ValueError("robot name or asset is required for MuJoCo simulation loading")
-
-        if config_path:
-            resolved = Path(config_path).expanduser()
-            xml_path = resolved / "scene.xml" if resolved.is_dir() else resolved
-            if not xml_path.exists():
-                raise FileNotFoundError(f"MuJoCo XML not found: {xml_path}")
-            self._model = mujoco.MjModel.from_xml_path(str(xml_path))
-        else:
-            self._model = load_robot_description(self._robot_name)
+        xml_path = self._resolve_xml_path(config_path)
+        self._model = mujoco.MjModel.from_xml_path(str(xml_path))
+        self._xml_path = xml_path
 
         self._data = mujoco.MjData(self._model)
-        self._num_joints = int(self._model.nq)
+        self._joint_mappings = build_joint_mappings(self._xml_path, self._model)
+        self._joint_names = [mapping.name for mapping in self._joint_mappings]
+        self._num_joints = len(self._joint_names)
         timestep = float(self._model.opt.timestep)
         self._control_frequency = 1.0 / timestep if timestep > 0.0 else 100.0
 
@@ -70,31 +63,70 @@ class MujocoEngine(SimulationEngine):
         self._joint_efforts = [0.0] * self._num_joints
 
         self._joint_position_targets = [0.0] * self._num_joints
-
-        for i in range(min(self._num_joints, self._model.nq)):
-            current_pos = float(self._data.qpos[i])
+        for i, mapping in enumerate(self._joint_mappings):
+            current_pos = self._current_position(mapping)
             self._joint_position_targets[i] = current_pos
             self._joint_positions[i] = current_pos
+
+    def _resolve_xml_path(self, config_path: str | None) -> Path:
+        if not config_path:
+            raise ValueError("config_path is required for MuJoCo simulation loading")
+        resolved = Path(config_path).expanduser()
+        xml_path = resolved / "scene.xml" if resolved.is_dir() else resolved
+        if not xml_path.exists():
+            raise FileNotFoundError(f"MuJoCo XML not found: {xml_path}")
+        return xml_path
+
+    def _current_position(self, mapping: JointMapping) -> float:
+        if mapping.joint_id is not None and mapping.qpos_adr is not None:
+            return float(self._data.qpos[mapping.qpos_adr])
+        if mapping.tendon_qpos_adrs:
+            return float(
+                sum(self._data.qpos[adr] for adr in mapping.tendon_qpos_adrs)
+                / len(mapping.tendon_qpos_adrs)
+            )
+        if mapping.actuator_id is not None:
+            return float(self._data.actuator_length[mapping.actuator_id])
+        return 0.0
 
     def _apply_control(self) -> None:
         with self._lock:
             pos_targets = list(self._joint_position_targets)
-        n_act = min(self._num_joints, self._model.nu)
         with self._lock:
-            for i in range(n_act):
-                self._data.ctrl[i] = pos_targets[i]
+            for i, mapping in enumerate(self._joint_mappings):
+                if mapping.actuator_id is None:
+                    continue
+                if i < len(pos_targets):
+                    self._data.ctrl[mapping.actuator_id] = pos_targets[i]
 
     def _update_joint_state(self) -> None:
         with self._lock:
-            n_q = min(self._num_joints, self._model.nq)
-            n_v = min(self._num_joints, self._model.nv)
-            n_act = min(self._num_joints, self._model.nu)
-            for i in range(n_q):
-                self._joint_positions[i] = float(self._data.qpos[i])
-            for i in range(n_v):
-                self._joint_velocities[i] = float(self._data.qvel[i])
-            for i in range(n_act):
-                self._joint_efforts[i] = float(self._data.qfrc_actuator[i])
+            for i, mapping in enumerate(self._joint_mappings):
+                if mapping.joint_id is not None:
+                    if mapping.qpos_adr is not None:
+                        self._joint_positions[i] = float(self._data.qpos[mapping.qpos_adr])
+                    if mapping.dof_adr is not None:
+                        self._joint_velocities[i] = float(self._data.qvel[mapping.dof_adr])
+                        self._joint_efforts[i] = float(self._data.qfrc_actuator[mapping.dof_adr])
+                    continue
+
+                if mapping.tendon_qpos_adrs:
+                    pos_sum = sum(self._data.qpos[adr] for adr in mapping.tendon_qpos_adrs)
+                    count = len(mapping.tendon_qpos_adrs)
+                    self._joint_positions[i] = float(pos_sum / count)
+                    if mapping.tendon_dof_adrs:
+                        vel_sum = sum(self._data.qvel[adr] for adr in mapping.tendon_dof_adrs)
+                        self._joint_velocities[i] = float(vel_sum / len(mapping.tendon_dof_adrs))
+                    else:
+                        self._joint_velocities[i] = 0.0
+                elif mapping.actuator_id is not None:
+                    self._joint_positions[i] = float(
+                        self._data.actuator_length[mapping.actuator_id]
+                    )
+                    self._joint_velocities[i] = 0.0
+
+                if mapping.actuator_id is not None:
+                    self._joint_efforts[i] = float(self._data.actuator_force[mapping.actuator_id])
 
     def connect(self) -> None:
         logger.info(f"{self.__class__.__name__}: connect()")
@@ -159,6 +191,10 @@ class MujocoEngine(SimulationEngine):
         return self._num_joints
 
     @property
+    def joint_names(self) -> list[str]:
+        return list(self._joint_names)
+
+    @property
     def model(self) -> mujoco.MjModel:
         return self._model
 
@@ -207,9 +243,8 @@ class MujocoEngine(SimulationEngine):
 
     def hold_current_position(self) -> None:
         with self._lock:
-            for i in range(min(self._num_joints, self._model.nq)):
-                current_pos = float(self._data.qpos[i])
-                self._joint_position_targets[i] = current_pos
+            for i, mapping in enumerate(self._joint_mappings):
+                self._joint_position_targets[i] = self._current_position(mapping)
 
 
 __all__ = [

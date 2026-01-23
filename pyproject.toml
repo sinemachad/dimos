@@ -316,7 +316,6 @@ module = [
     "tf2_msgs.*",
     "mujoco",
     "mujoco_playground.*",
-    "robot_descriptions.*",
     "etils",
     "xarm.*",
     "dimos_lcm.*",
