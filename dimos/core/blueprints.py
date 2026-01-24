@@ -21,7 +21,7 @@ import inspect
 import operator
 import sys
 from types import MappingProxyType
-from typing import Any, Literal, get_args, get_origin, get_type_hints
+from typing import Any, Literal, Self, get_args, get_origin, get_type_hints
 
 import rerun as rr
 import rerun.blueprint as rrb
@@ -51,6 +51,32 @@ class ModuleBlueprint:
     args: tuple[Any]
     kwargs: dict[str, Any]
 
+    @staticmethod
+    def create(module: type[Module], args: tuple[Any], kwargs: dict[str, Any]) -> Self:
+        connections: list[ModuleConnection] = []
+
+        # Use get_type_hints() to properly resolve string annotations.
+        try:
+            all_annotations = get_type_hints(module)
+        except Exception:
+            # Fallback to raw annotations if get_type_hints fails.
+            all_annotations = {}
+            for base_class in reversed(module.__mro__):
+                if hasattr(base_class, "__annotations__"):
+                    all_annotations.update(base_class.__annotations__)
+
+        for name, annotation in all_annotations.items():
+            origin = get_origin(annotation)
+            if origin not in (In, Out):
+                continue
+            direction = "in" if origin == In else "out"
+            type_ = get_args(annotation)[0]
+            connections.append(ModuleConnection(name=name, type=type_, direction=direction))  # type: ignore[arg-type]
+
+        return ModuleBlueprint(
+            module=module, connections=tuple(connections), args=args, kwargs=kwargs
+        )
+
 
 @dataclass(frozen=True)
 class ModuleBlueprintSet:
@@ -64,6 +90,11 @@ class ModuleBlueprintSet:
         default_factory=lambda: MappingProxyType({})
     )
     requirement_checks: tuple[Callable[[], str | None], ...] = field(default_factory=tuple)
+
+    @staticmethod
+    def create(self, module: type[Module], *args: tuple[Any], **kwargs: dict[str, Any]) -> Self:
+        blueprint = ModuleBlueprint.create(module, args, kwargs)
+        return ModuleBlueprintSet(blueprints=(blueprint,))
 
     def transports(self, transports: dict[tuple[str, type], Any]) -> "ModuleBlueprintSet":
         return ModuleBlueprintSet(
@@ -396,37 +427,6 @@ class ModuleBlueprintSet:
             self._init_rerun_blueprint(module_coordinator)
 
         return module_coordinator
-
-
-def _make_module_blueprint(
-    module: type[Module], args: tuple[Any], kwargs: dict[str, Any]
-) -> ModuleBlueprint:
-    connections: list[ModuleConnection] = []
-
-    # Use get_type_hints() to properly resolve string annotations.
-    try:
-        all_annotations = get_type_hints(module)
-    except Exception:
-        # Fallback to raw annotations if get_type_hints fails.
-        all_annotations = {}
-        for base_class in reversed(module.__mro__):
-            if hasattr(base_class, "__annotations__"):
-                all_annotations.update(base_class.__annotations__)
-
-    for name, annotation in all_annotations.items():
-        origin = get_origin(annotation)
-        if origin not in (In, Out):
-            continue
-        direction = "in" if origin == In else "out"
-        type_ = get_args(annotation)[0]
-        connections.append(ModuleConnection(name=name, type=type_, direction=direction))  # type: ignore[arg-type]
-
-    return ModuleBlueprint(module=module, connections=tuple(connections), args=args, kwargs=kwargs)
-
-
-def create_module_blueprint(module: type[Module], *args: Any, **kwargs: Any) -> ModuleBlueprintSet:
-    blueprint = _make_module_blueprint(module, args, kwargs)
-    return ModuleBlueprintSet(blueprints=(blueprint,))
 
 
 def autoconnect(*blueprints: ModuleBlueprintSet) -> ModuleBlueprintSet:

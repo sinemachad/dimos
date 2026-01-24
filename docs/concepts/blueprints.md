@@ -7,14 +7,14 @@ You don't typically want to run a single module, so multiple blueprints are hand
 You create a `ModuleBlueprintSet` from a single module (say `ConnectionModule`) with:
 
 ```python session=blueprint-ex1
-from dimos.core.blueprints import create_module_blueprint
+from dimos.core.blueprints import ModuleBlueprintSet
 from dimos.core import Module, rpc
 
 class ConnectionModule(Module):
     def __init__(self, arg1, arg2, kwarg='value') -> None:
         super().__init__()
 
-blueprint = create_module_blueprint(ConnectionModule, 'arg1', 'arg2', kwarg='value')
+blueprint = ModuleBlueprintSet.create(ConnectionModule, 'arg1', 'arg2', kwarg='value')
 ```
 
 But the same thing can be accomplished more succinctly as:
@@ -99,7 +99,7 @@ Imagine you have this code:
 ```python session=blueprint-ex1
 from functools import partial
 
-from dimos.core.blueprints import create_module_blueprint, autoconnect
+from dimos.core.blueprints import ModuleBlueprintSet, autoconnect
 from dimos.core import Module, rpc, Out, In
 from dimos.msgs.sensor_msgs import Image
 
@@ -111,8 +111,8 @@ class ModuleB(Module):
     image: In[Image]
     begin_explore: In[bool]
 
-module_a = partial(create_module_blueprint, ModuleA)
-module_b = partial(create_module_blueprint, ModuleB)
+module_a = partial(ModuleBlueprintSet.create, ModuleA)
+module_b = partial(ModuleBlueprintSet.create, ModuleB)
 
 autoconnect(module_a(), module_b())
 ```
