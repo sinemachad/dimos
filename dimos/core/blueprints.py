@@ -21,7 +21,7 @@ import inspect
 import operator
 import sys
 from types import MappingProxyType
-from typing import Any, Literal, Self, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Literal, Self, get_args, get_origin, get_type_hints
 
 import rerun as rr
 import rerun.blueprint as rrb
@@ -30,11 +30,13 @@ from dimos.core.global_config import GlobalConfig
 from dimos.core.module import Module
 from dimos.core.module_coordinator import ModuleCoordinator
 from dimos.core.stream import In, Out
-from dimos.core.transport import LCMTransport, pLCMTransport, PubSubTransport
-from dimos.core.rpc_client import RPCClient
+from dimos.core.transport import LCMTransport, PubSubTransport, pLCMTransport
 from dimos.spec.utils import get_protocol_method_signatures, is_spec
 from dimos.utils.generic import short_id
 from dimos.utils.logging_config import setup_logger
+
+if TYPE_CHECKING:
+    from dimos.core.rpc_client import ModuleProxy
 
 logger = setup_logger()
 
@@ -264,7 +266,7 @@ class Blueprint:
             module_coordinator.deploy(blueprint.module, *blueprint.args, **kwargs)
 
     def _connect_transports(self, module_coordinator: ModuleCoordinator) -> None:
-        # Gather all the In/Out connections with remapping applied.
+        # dict when given (final/remapped) connection name+type, provides a list of modules + original (non-remapped) connection names
         connections = defaultdict(list)
 
         for blueprint in self.blueprints:
@@ -278,7 +280,7 @@ class Blueprint:
         for remapped_name, type in connections.keys():
             transport = self._get_transport_for(remapped_name, type)
             for module, original_name in connections[(remapped_name, type)]:
-                instance: RPCClient = module_coordinator.get_instance(module)
+                instance: ModuleProxy = module_coordinator.get_instance(module)
                 instance.set_transport(original_name, transport)  # type: ignore[union-attr]
                 logger.info(
                     "Transport",
@@ -305,11 +307,13 @@ class Blueprint:
 
         for blueprint in self.blueprints:
             for method_name in blueprint.module.rpcs.keys():  # type: ignore[attr-defined]
-                module_proxy: RPCClient = module_coordinator.get_instance(blueprint.module)
+                module_proxy: ModuleProxy = module_coordinator.get_instance(blueprint.module)
                 method_for_rpc_client = getattr(module_proxy, method_name)
                 # Register under concrete class name (backward compatibility)
-                rpc_methods[f"{blueprint.module.__name__}_{method_name}"] = method
-                rpc_methods_dot[f"{blueprint.module.__name__}.{method_name}"] = method
+                rpc_methods[f"{blueprint.module.__name__}_{method_name}"] = method_for_rpc_client
+                rpc_methods_dot[f"{blueprint.module.__name__}.{method_name}"] = (
+                    method_for_rpc_client
+                )
 
                 # Also register under any interface names
                 for base in blueprint.module.mro():
@@ -321,10 +325,12 @@ class Blueprint:
                         and getattr(base, method_name, None) is not None
                     ):
                         interface_key = f"{base.__name__}.{method_name}"
-                        interface_methods_dot[interface_key].append((blueprint.module, method))
+                        interface_methods_dot[interface_key].append(
+                            (blueprint.module, method_for_rpc_client)
+                        )
                         interface_key_underscore = f"{base.__name__}_{method_name}"
                         interface_methods[interface_key_underscore].append(
-                            (blueprint.module, method)
+                            (blueprint.module, method_for_rpc_client)
                         )
 
         # Check for ambiguity in interface methods and add non-ambiguous ones

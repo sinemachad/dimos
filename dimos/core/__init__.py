@@ -10,7 +10,7 @@ from rich.console import Console
 import dimos.core.colors as colors
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleBase, ModuleConfig, ModuleConfigT
-from dimos.core.rpc_client import RPCClient
+from dimos.core.rpc_client import ModuleProxy
 from dimos.core.stream import In, Out, RemoteIn, RemoteOut, Transport
 from dimos.core.transport import (
     LCMTransport,
@@ -93,7 +93,7 @@ def patchdask(dask_client: Client, local_cluster: LocalCluster) -> DimosCluster:
         actor_class: Module,
         *args,
         **kwargs,
-    ) -> RPCClient:
+    ) -> ModuleProxy:
         logger.info("Deploying module.", module=actor_class.__name__)
         actor = dask_client.submit(  # type: ignore[no-untyped-call]
             actor_class,
@@ -108,7 +108,7 @@ def patchdask(dask_client: Client, local_cluster: LocalCluster) -> DimosCluster:
         # Register actor deployment in shared memory
         ActorRegistry.update(str(actor), str(worker))
 
-        return RPCClient(actor, actor_class)
+        return ModuleProxy(actor, actor_class)
 
     def check_worker_memory() -> None:
         """Check memory usage of all workers."""

@@ -15,6 +15,7 @@
 from collections.abc import Callable
 from typing import Any
 
+from dimos.core.module import Module
 from dimos.protocol.rpc import LCMRPC
 from dimos.utils.logging_config import setup_logger
 
@@ -139,3 +140,10 @@ class RPCClient:
         # return super().__getattr__(name)
         # Try to avoid recursion by directly accessing attributes that are known
         return self.actor_instance.__getattr__(name)
+
+
+# the class below is only ever used for type hinting
+# why? because the RPCClient instance is going to have all the methods of a Module
+# but those methods/attributes are super dynamic, so the type hints can't figure that out
+class ModuleProxy(RPCClient, Module):
+    pass

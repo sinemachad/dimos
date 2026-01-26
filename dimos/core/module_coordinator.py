@@ -21,7 +21,7 @@ from dimos.core.global_config import GlobalConfig
 from dimos.core.resource import Resource
 
 if TYPE_CHECKING:
-    from dimos.core.rpc_client import RPCClient
+    from dimos.core.rpc_client import ModuleProxy
 
 T = TypeVar("T", bound="Module")
 
@@ -54,7 +54,7 @@ class ModuleCoordinator(Resource):
         if not self._client:
             raise ValueError("Not started")
 
-        module: RPCClient = self._client.deploy(module_class, *args, **kwargs)  # type: ignore[attr-defined]
+        module: ModuleProxy = self._client.deploy(module_class, *args, **kwargs)
         self._deployed_modules[module_class] = module
         return module  # type: ignore[no-any-return]
 
