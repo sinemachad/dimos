@@ -41,27 +41,16 @@ class Case(Generic[TopicT, MsgT]):
 TestData = Sequence[Case[Any, Any]]
 
 
-def _format_iec(value: float, suffix: str = "", concise: bool = False, decimals: int = 2) -> str:
-    """Format bytes using IEC units (binary): KiB/MiB/GiB = 1024^1/2/3."""
+def _format_iec(value: float, concise: bool = False, decimals: int = 2) -> str:
+    """Format bytes with IEC units (Ki/Mi/Gi = 1024^1/2/3)"""
     k = 1024.0
-    if concise:
-        units = ["", "K", "M", "G", "T"]
-    else:
-        units = ["", "KiB", "MiB", "GiB", "TiB"]
+    units = ["B", "K", "M", "G", "T"] if concise else ["B", "KiB", "MiB", "GiB", "TiB"]
 
     for unit in units[:-1]:
         if abs(value) < k:
-            return (
-                f"{value:.{decimals}f} {unit}{suffix}".strip()
-                if not concise
-                else f"{value:.{decimals}f}{unit}"
-            )
+            return f"{value:.{decimals}f}{unit}" if concise else f"{value:.{decimals}f} {unit}"
         value /= k
-    return (
-        f"{value:.{decimals}f} {units[-1]}{suffix}".strip()
-        if not concise
-        else f"{value:.{decimals}f}{units[-1]}"
-    )
+    return f"{value:.{decimals}f}{units[-1]}" if concise else f"{value:.{decimals}f} {units[-1]}"
 
 
 @dataclass
@@ -129,11 +118,11 @@ class BenchmarkResults:
             recv_style = "yellow" if r.receive_time > 0.1 else "dim"
             table.add_row(
                 r.transport,
-                _format_iec(r.msg_size_bytes, "B", decimals=1),
+                _format_iec(r.msg_size_bytes, decimals=1),
                 f"{r.msgs_sent:,}",
                 f"{r.msgs_received:,}",
                 f"{r.throughput_msgs:,.0f}",
-                _format_iec(r.throughput_bytes, "B/s"),
+                f"{_format_iec(r.throughput_bytes)}/s",
                 f"[{recv_style}]{r.receive_time * 1000:.0f}ms[/{recv_style}]",
                 f"[{loss_style}]{r.loss_pct:.1f}%[/{loss_style}]",
             )
@@ -207,7 +196,7 @@ class BenchmarkResults:
             return gradient[int(t * (len(gradient) - 1))]
 
         reset = "\033[0m"
-        size_labels = [_format_iec(s, "", concise=True, decimals=0) for s in sizes]
+        size_labels = [_format_iec(s, concise=True, decimals=0) for s in sizes]
         col_w = max(8, max(len(s) for s in size_labels) + 1)
         transport_w = max(len(t) for t in transports) + 1
 
@@ -241,7 +230,7 @@ class BenchmarkResults:
         """Print bandwidth heatmap."""
 
         def fmt(v: float) -> str:
-            return _format_iec(v, "", concise=True, decimals=1)
+            return _format_iec(v, concise=True, decimals=1)
 
         self._print_heatmap("Bandwidth (IEC)", lambda r: r.throughput_bytes, fmt)
 
