@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import inspect
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-from annotation_protocol import AnnotationProtocol
+from annotation_protocol import AnnotationProtocol  # type: ignore[import-untyped]
 from typing_extensions import is_protocol
 
 
@@ -24,7 +24,7 @@ class Spec(Protocol):
     pass
 
 
-def is_spec(cls: object) -> bool:
+def is_spec(cls: Any) -> bool:
     """
     Example:
         class NormalProtocol(Protocol):
@@ -40,8 +40,8 @@ def is_spec(cls: object) -> bool:
 
 
 def spec_structural_compliance(
-    obj: object,
-    spec: type[object],
+    obj: Any,
+    spec: Any,
 ) -> bool:
     """
     Example:
@@ -70,8 +70,8 @@ def spec_structural_compliance(
 
 
 def spec_annotation_compliance(
-    obj: object,
-    proto: type[object],
+    obj: Any,
+    proto: Any,
 ) -> bool:
     """
     Example:

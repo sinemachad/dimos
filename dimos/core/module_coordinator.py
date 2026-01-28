@@ -30,7 +30,7 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
     _client: DimosCluster | None = None
     _n: int | None = None
     _memory_limit: str = "auto"
-    _deployed_modules: dict[type[Module], Module] = {}
+    _deployed_modules: dict[type[Module], "ModuleProxy"] = {}
 
     def __init__(
         self,
@@ -50,20 +50,20 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
 
         self._client.close_all()  # type: ignore[union-attr]
 
-    def deploy(self, module_class: type[T], *args, **kwargs) -> T:  # type: ignore[no-untyped-def]
+    def deploy(self, module_class: type[T], *args, **kwargs) -> "ModuleProxy":  # type: ignore[no-untyped-def]
         if not self._client:
             raise ValueError("Not started")
 
-        module: ModuleProxy = self._client.deploy(module_class, *args, **kwargs)
+        module: ModuleProxy = self._client.deploy(module_class, *args, **kwargs)  # type: ignore[attr-defined]
         self._deployed_modules[module_class] = module
-        return module  # type: ignore[no-any-return]
+        return module
 
     def start_all_modules(self) -> None:
         for module in self._deployed_modules.values():
             module.start()
 
-    def get_instance(self, module: type[T]) -> T | None:
-        return self._deployed_modules.get(module)  # type: ignore[return-value]
+    def get_instance(self, module: type[T]) -> "ModuleProxy":
+        return self._deployed_modules.get(module)  # type: ignore[return-value, no-any-return]
 
     def loop(self) -> None:
         try:

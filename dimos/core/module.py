@@ -11,8 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
+
 import asyncio
-from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 import sys
@@ -27,8 +28,10 @@ from typing import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from dimos.core.introspection.module import ModuleInfo
-    from dimos.core.rpc_client import RPCClient
+    from dimos.core.rpc_client import RpcCall, RPCClient
 
 from dask.distributed import Actor, get_worker
 from reactivex.disposable import CompositeDisposable
@@ -38,7 +41,6 @@ from dimos.core import colors
 from dimos.core.core import T, rpc
 from dimos.core.introspection.module import extract_module_info, render_module_io
 from dimos.core.resource import Resource
-from dimos.core.rpc_client import RPCClient
 from dimos.core.stream import In, Out, RemoteIn, RemoteOut, Transport
 from dimos.protocol.rpc import LCMRPC, RPCSpec
 from dimos.protocol.service import Configurable  # type: ignore[attr-defined]
@@ -265,7 +267,7 @@ class ModuleBase(Configurable[ModuleConfigT], SkillContainer, Resource):
         """Descriptor that makes io() work on both class and instance."""
 
         def __get__(
-            self, obj: "ModuleBase | None", objtype: type["ModuleBase"]
+            self, obj: ModuleBase | None, objtype: type[ModuleBase]
         ) -> Callable[[bool], str]:
             if obj is None:
                 return objtype._io_class
@@ -274,7 +276,7 @@ class ModuleBase(Configurable[ModuleConfigT], SkillContainer, Resource):
     io = _io_descriptor()
 
     @classmethod
-    def _module_info_class(cls) -> "ModuleInfo":
+    def _module_info_class(cls) -> ModuleInfo:
         """Class-level module_info() - returns ModuleInfo from annotations."""
 
         hints = get_type_hints(cls)
@@ -310,8 +312,8 @@ class ModuleBase(Configurable[ModuleConfigT], SkillContainer, Resource):
         """Descriptor that makes module_info() work on both class and instance."""
 
         def __get__(
-            self, obj: "ModuleBase | None", objtype: type["ModuleBase"]
-        ) -> Callable[[], "ModuleInfo"]:
+            self, obj: ModuleBase | None, objtype: type[ModuleBase]
+        ) -> Callable[[], ModuleInfo]:
             if obj is None:
                 return objtype._module_info_class
             # For instances, extract from actual streams

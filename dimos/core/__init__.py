@@ -90,12 +90,12 @@ class CudaCleanupPlugin:
 def patch_actor(actor, cls) -> None: ...  # type: ignore[no-untyped-def]
 
 
-DimosCluster: TypeAlias = Client
+DimosCluster = Client
 
 
 def patchdask(dask_client: Client, local_cluster: LocalCluster) -> DimosCluster:
     def deploy(  # type: ignore[no-untyped-def]
-        actor_class: Module,
+        actor_class: type[Module],
         *args,
         **kwargs,
     ) -> ModuleProxy:
@@ -229,7 +229,7 @@ def patchdask(dask_client: Client, local_cluster: LocalCluster) -> DimosCluster:
     dask_client.check_worker_memory = check_worker_memory  # type: ignore[attr-defined]
     dask_client.stop = lambda: dask_client.close()  # type: ignore[attr-defined, no-untyped-call]
     dask_client.close_all = close_all  # type: ignore[attr-defined]
-    return dask_client
+    return dask_client  # type: ignore[return-value]
 
 
 def start(n: int | None = None, memory_limit: str = "auto") -> DimosCluster:

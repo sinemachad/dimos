@@ -21,7 +21,7 @@ import inspect
 import operator
 import sys
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin, get_type_hints
+from typing import Any, Literal, get_args, get_origin, get_type_hints
 
 import rerun as rr
 import rerun.blueprint as rrb
@@ -34,9 +34,6 @@ from dimos.core.transport import LCMTransport, PubSubTransport, pLCMTransport
 from dimos.spec.utils import Spec, is_spec, spec_annotation_compliance, spec_structural_compliance
 from dimos.utils.generic import short_id
 from dimos.utils.logging_config import setup_logger
-
-if TYPE_CHECKING:
-    from dimos.core.rpc_client import ModuleProxy
 
 logger = setup_logger()
 
@@ -51,7 +48,7 @@ class StreamRef:
 @dataclass(frozen=True)
 class ModuleRef:
     name: str
-    spec: Spec | type[Module]
+    spec: type[Spec] | type[Module]
 
 
 @dataclass(frozen=True)
@@ -111,7 +108,7 @@ class ModuleBlueprintSet:
         default_factory=lambda: MappingProxyType({})
     )
     global_config_overrides: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
-    remapping_map: Mapping[tuple[type[Module], str], str | type[Module]] = field(
+    remapping_map: Mapping[tuple[type[Module], str], str | type[Module] | type[Spec]] = field(
         default_factory=lambda: MappingProxyType({})
     )
     requirement_checks: tuple[Callable[[], str | None], ...] = field(default_factory=tuple)
@@ -139,7 +136,9 @@ class ModuleBlueprintSet:
             requirement_checks=self.requirement_checks,
         )
 
-    def remappings(self, remappings: list[tuple[type[Module], str, str]]) -> "ModuleBlueprintSet":
+    def remappings(
+        self, remappings: list[tuple[type[Module], str, str | type[Module] | type[Spec]]]
+    ) -> "ModuleBlueprintSet":
         remappings_dict = dict(self.remapping_map)
         for module, old, new in remappings:
             remappings_dict[(module, old)] = new
@@ -199,7 +198,8 @@ class ModuleBlueprintSet:
             for conn in blueprint.connections:
                 # Check if this connection should be remapped
                 remapped_name = self.remapping_map.get((blueprint.module, conn.name), conn.name)
-                result.add((remapped_name, conn.type))
+                if isinstance(remapped_name, str):
+                    result.add((remapped_name, conn.type))
         return result
 
     def _is_name_unique(self, name: str) -> bool:
@@ -273,14 +273,16 @@ class ModuleBlueprintSet:
             for conn in blueprint.connections:
                 # Check if this connection should be remapped
                 remapped_name = self.remapping_map.get((blueprint.module, conn.name), conn.name)
-                # Group by remapped name and type
-                connections[remapped_name, conn.type].append((blueprint.module, conn.name))
+                if isinstance(remapped_name, str):
+                    # Group by remapped name and type
+                    connections[remapped_name, conn.type].append((blueprint.module, conn.name))
 
         # Connect all In/Out connections by remapped name and type.
+
         for remapped_name, type in connections.keys():
             transport = self._get_transport_for(remapped_name, type)
             for module, original_name in connections[(remapped_name, type)]:
-                instance: ModuleProxy = module_coordinator.get_instance(module)  # type: ignore[assignment]
+                instance = module_coordinator.get_instance(module)  # type: ignore[assignment]
                 instance.set_transport(original_name, transport)  # type: ignore[union-attr]
                 logger.info(
                     "Transport",
@@ -297,7 +299,8 @@ class ModuleBlueprintSet:
         mod_and_mod_ref_to_proxy = {
             (module, name): replacement
             for (module, name), replacement in self.remapping_map.items()
-            if is_spec(replacement) or issubclass(replacement, Module)
+            if is_spec(replacement)
+            or (isinstance(replacement, type) and issubclass(replacement, Module))
         }
 
         # after this loop we should have an exact module for every module_ref on every blueprint
@@ -364,8 +367,8 @@ class ModuleBlueprintSet:
 
         # now that we know the connections, we mutate the RPCClient objects
         for (base_module, module_ref_name), target_module in mod_and_mod_ref_to_proxy.items():
-            base_module_proxy: ModuleProxy = module_coordinator.get_instance(base_module)
-            target_module_proxy: ModuleProxy = module_coordinator.get_instance(target_module)
+            base_module_proxy = module_coordinator.get_instance(base_module)
+            target_module_proxy = module_coordinator.get_instance(target_module)  # type: ignore[type-var,arg-type]
             setattr(
                 base_module_proxy,
                 module_ref_name,
@@ -389,7 +392,7 @@ class ModuleBlueprintSet:
 
         for blueprint in self.blueprints:
             for method_name in blueprint.module.rpcs.keys():  # type: ignore[attr-defined]
-                module_proxy: ModuleProxy = module_coordinator.get_instance(blueprint.module)  # type: ignore[assignment]
+                module_proxy = module_coordinator.get_instance(blueprint.module)  # type: ignore[assignment]
                 method_for_rpc_client = getattr(module_proxy, method_name)
                 # Register under concrete class name (backward compatibility)
                 rpc_methods[f"{blueprint.module.__name__}_{method_name}"] = method_for_rpc_client
@@ -425,7 +428,7 @@ class ModuleBlueprintSet:
 
         # Fulfil method requests (so modules can call each other).
         for blueprint in self.blueprints:
-            instance: ModuleProxy = module_coordinator.get_instance(blueprint.module)  # type: ignore[assignment]
+            instance = module_coordinator.get_instance(blueprint.module)  # type: ignore[assignment]
 
             for method_name in blueprint.module.rpcs.keys():  # type: ignore[attr-defined]
                 if not method_name.startswith("set_"):

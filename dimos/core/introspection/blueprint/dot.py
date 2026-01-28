@@ -96,9 +96,9 @@ def render(
             remapped_name = blueprint_set.remapping_map.get((bp.module, conn.name), conn.name)
             key = (remapped_name, conn.type)
             if conn.direction == "out":
-                producers[key].append(bp.module)
+                producers[key].append(bp.module)  # type: ignore[index]
             else:
-                consumers[key].append(bp.module)
+                consumers[key].append(bp.module)  # type: ignore[index]
 
     # Find all active channels (have both producers AND consumers)
     active_channels: dict[tuple[str, type], str] = {}  # key -> color
