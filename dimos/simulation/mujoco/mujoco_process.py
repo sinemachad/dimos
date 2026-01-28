@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# pyright: reportMissingImports=false
+# pyright: reportMissingModuleSource=false
+
 # Copyright 2025-2026 Dimensional Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -128,6 +131,81 @@ class MockController:
     def stop(self) -> None:
         """Stop method to satisfy InputController protocol."""
         pass
+
+
+def _step_or_mirror(
+    *,
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    config: GlobalConfig,
+    sdk2_bridge: Any | None,
+    sdk2_mirror: Any | None,
+    elastic_band: ElasticBand,
+    gantry_body_id: int,
+    last_sim_time: float,
+) -> float:
+    """Advance simulation one rendered frame (or mirror the real robot)."""
+    if sdk2_mirror is not None:
+        sdk2_mirror.apply_to_mujoco()
+        mujoco.mj_forward(model, data)
+        return float(data.time)
+
+    for _ in range(config.mujoco_steps_per_frame):
+        if gantry_body_id >= 0:
+            if elastic_band.enable:
+                force = elastic_band.advance(data.xpos[gantry_body_id], data.qvel[0:3])
+                data.xfrc_applied[gantry_body_id, 0:3] = force
+            else:
+                data.xfrc_applied[gantry_body_id, 0:3] = 0.0
+
+        mujoco.mj_step(model, data)
+        if sdk2_bridge is not None:
+            sdk2_bridge.publish_state()
+
+    # Reset detection (viewer backspace): time jumps backwards.
+    if sdk2_bridge is not None:
+        sim_time = float(data.time)
+        if sim_time + 1e-9 < last_sim_time:
+            sdk2_bridge.on_mujoco_reset()
+            if gantry_body_id >= 0:
+                elastic_band.reset_to_pose(data.xpos[gantry_body_id].copy())
+        return sim_time
+
+    return float(data.time)
+
+
+def _render_rgb_frame(
+    *,
+    rgb_renderer: mujoco.Renderer,
+    scene_option: mujoco.MjvOption,
+    data: mujoco.MjData,
+    camera_id: int,
+) -> np.ndarray:
+    rgb_renderer.update_scene(data, camera=camera_id, scene_option=scene_option)
+    return rgb_renderer.render()
+
+
+def _render_depth_triplet(
+    *,
+    depth_front_renderer: mujoco.Renderer,
+    depth_left_renderer: mujoco.Renderer,
+    depth_right_renderer: mujoco.Renderer,
+    scene_option: mujoco.MjvOption,
+    data: mujoco.MjData,
+    cam_front_id: int,
+    cam_left_id: int,
+    cam_right_id: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    depth_front_renderer.update_scene(data, camera=cam_front_id, scene_option=scene_option)
+    depth_front = depth_front_renderer.render()
+
+    depth_left_renderer.update_scene(data, camera=cam_left_id, scene_option=scene_option)
+    depth_left = depth_left_renderer.render()
+
+    depth_right_renderer.update_scene(data, camera=cam_right_id, scene_option=scene_option)
+    depth_right = depth_right_renderer.render()
+
+    return depth_front, depth_left, depth_right
 
 
 def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
@@ -338,37 +416,18 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
 
             # Step / update simulation
             t0 = time.perf_counter()
-            if sdk2_mirror is not None:
-                # Mirror mode: apply incoming robot state and forward kinematics for rendering.
-                sdk2_mirror.apply_to_mujoco()
-                mujoco.mj_forward(model, data)
-            else:
-                # Normal sim stepping
-                for _ in range(config.mujoco_steps_per_frame):
-                    # Apply gantry force before stepping.
-                    if gantry_body_id >= 0:
-                        if elastic_band.enable:
-                            # Use free-joint linear velocity (qvel[0:3]) as a damping signal.
-                            force = elastic_band.advance(data.xpos[gantry_body_id], data.qvel[0:3])
-                            data.xfrc_applied[gantry_body_id, 0:3] = force
-                        else:
-                            data.xfrc_applied[gantry_body_id, 0:3] = 0.0
-
-                    mujoco.mj_step(model, data)
-                    # In SDK2 mode, publish state after each physics step
-                    if sdk2_bridge is not None:
-                        sdk2_bridge.publish_state()
+            last_sim_time = _step_or_mirror(
+                model=model,
+                data=data,
+                config=config,
+                sdk2_bridge=sdk2_bridge,
+                sdk2_mirror=sdk2_mirror,
+                elastic_band=elastic_band,
+                gantry_body_id=gantry_body_id,
+                last_sim_time=last_sim_time,
+            )
             acc_step_s += time.perf_counter() - t0
             person_position_controller.tick(data)
-
-            # Detect MuJoCo viewer reset (e.g. backspace). Reset typically makes time jump backwards.
-            if sdk2_bridge is not None:
-                sim_time = float(data.time)
-                if sim_time + 1e-9 < last_sim_time:
-                    sdk2_bridge.on_mujoco_reset()
-                    if gantry_body_id >= 0:
-                        elastic_band.reset_to_pose(data.xpos[gantry_body_id].copy())
-                last_sim_time = sim_time
             m_viewer.sync()
 
             # Always update odometry
@@ -380,26 +439,34 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
 
             # Video rendering
             if current_time - last_video_time >= video_interval:
-                rgb_renderer.update_scene(data, camera=camera_id, scene_option=scene_option)
-                pixels = rgb_renderer.render()
+                t0 = time.perf_counter()
+                pixels = _render_rgb_frame(
+                    rgb_renderer=rgb_renderer,
+                    scene_option=scene_option,
+                    data=data,
+                    camera_id=camera_id,
+                )
+                acc_rgb_render_s += time.perf_counter() - t0
+                t0 = time.perf_counter()
                 shm.write_video(pixels)
+                acc_rgb_shm_s += time.perf_counter() - t0
                 last_video_time = current_time
 
             # Lidar/depth rendering
             if current_time - last_lidar_time >= lidar_interval:
                 # Render all depth cameras
-                depth_renderer.update_scene(data, camera=lidar_camera_id, scene_option=scene_option)
-                depth_front = depth_renderer.render()
-
-                depth_left_renderer.update_scene(
-                    data, camera=lidar_left_camera_id, scene_option=scene_option
+                t0 = time.perf_counter()
+                depth_front, depth_left, depth_right = _render_depth_triplet(
+                    depth_front_renderer=depth_renderer,
+                    depth_left_renderer=depth_left_renderer,
+                    depth_right_renderer=depth_right_renderer,
+                    scene_option=scene_option,
+                    data=data,
+                    cam_front_id=lidar_camera_id,
+                    cam_left_id=lidar_left_camera_id,
+                    cam_right_id=lidar_right_camera_id,
                 )
-                depth_left = depth_left_renderer.render()
-
-                depth_right_renderer.update_scene(
-                    data, camera=lidar_right_camera_id, scene_option=scene_option
-                )
-                depth_right = depth_right_renderer.render()
+                acc_depth_render_s += time.perf_counter() - t0
 
                 shm.write_depth(depth_front, depth_left, depth_right)
 
@@ -437,17 +504,17 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
                         all_points.append(points)
 
                 if all_points:
+                    t0 = time.perf_counter()
                     combined_points = np.vstack(all_points)
                     pcd = o3d.geometry.PointCloud()
                     pcd.points = o3d.utility.Vector3dVector(combined_points)
                     pcd = pcd.voxel_down_sample(voxel_size=LIDAR_RESOLUTION)
+                    acc_pcd_s += time.perf_counter() - t0
 
-                    lidar_msg = PointCloud2(
-                        pointcloud=pcd,
-                        ts=time.time(),
-                        frame_id="world",
-                    )
+                    t0 = time.perf_counter()
+                    lidar_msg = PointCloud2(pointcloud=pcd, ts=time.time(), frame_id="world")
                     shm.write_lidar(lidar_msg)
+                    acc_lidar_shm_s += time.perf_counter() - t0
 
                 last_lidar_time = current_time
 
