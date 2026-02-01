@@ -88,7 +88,7 @@ ViewerMode = Literal["native", "web", "none"]
 # automatically spy an all the transports and read visualization hints
 #
 # this is the correct implementation.
-# temporarily we are using these "sideloading" transforms={} to define custom to_rerun methods for specific topics
+# temporarily we are using these "sideloading" converters={} to define custom to_rerun methods for specific topics
 # as well as pubsubs to specify which protocols to listen to.
 
 
@@ -100,7 +100,7 @@ class Config(ModuleConfig):
         default_factory=lambda: [LCM(autoconf=True)]
     )
 
-    transforms: dict[Glob | str, Callable[[Any], Archetype]] = field(default_factory=dict)
+    converters: dict[Glob | str, Callable[[Any], Archetype]] = field(default_factory=dict)
 
     entity_prefix: str = "world"
     topic_to_entity: Callable[[Any], str] | None = None
@@ -131,23 +131,23 @@ class RerunBridgeModule(Module):
         super().__init__(**kwargs)
 
     @lru_cache(maxsize=256)
-    def _transform_for_entity_path(self, entity_path: str) -> Callable[[Any], RerunData | None]:
-        """Return a composed transform for the entity path.
+    def _converter_for_entity_path(self, entity_path: str) -> Callable[[Any], RerunData | None]:
+        """Return a composed converter for the entity path.
 
-        Chains matching transforms from config, ending with obligatory_transform
+        Chains matching converters from config, ending with final_convert
         which handles .to_rerun() or passes through Archetypes.
         """
         from rerun._baseclasses import Archetype
 
-        # find all matching transforms for this entity path
+        # find all matching converters for this entity path
         matches = [
             fn
-            for pattern, fn in self.config.transforms.items()
+            for pattern, fn in self.config.converters.items()
             if pattern_matches(pattern, entity_path)
         ]
 
-        # final obligatory transform (ensures we return Archetype or None)
-        def final_transform(msg: Any) -> RerunData | None:
+        # final step (ensures we return Archetype or None)
+        def final_convert(msg: Any) -> RerunData | None:
             if isinstance(msg, Archetype):
                 return msg
             if is_rerun_multi(msg):
@@ -156,8 +156,8 @@ class RerunBridgeModule(Module):
                 return msg.to_rerun()
             return None
 
-        # compose all transforms
-        return lambda msg: pipe(msg, *matches, final_transform)
+        # compose all converters
+        return lambda msg: pipe(msg, *matches, final_convert)
 
     def _get_entity_path(self, topic: Any) -> str:
         """Convert a topic to a Rerun entity path."""
@@ -177,10 +177,10 @@ class RerunBridgeModule(Module):
         # convert a potentially complex topic object into an str rerun entity path
         entity_path: str = self._get_entity_path(topic)
 
-        # apply transforms (including obligatory_transform which handles .to_rerun())
-        rerun_data: RerunData | None = self._transform_for_entity_path(entity_path)(msg)
+        # apply converters (including final_convert which handles .to_rerun())
+        rerun_data: RerunData | None = self._converter_for_entity_path(entity_path)(msg)
 
-        # transforms can also supress logging by returning None
+        # converters can also suppress logging by returning None
         if not rerun_data:
             return
 
@@ -248,13 +248,12 @@ def main() -> None:
         # any pubsub that supports subscribe_all and topic that supports str(topic)
         # is acceptable here
         pubsubs=[LCM(autoconf=True)],
-        # defines transforms for rerun entity paths
-        transforms={
+        # custom converters for specific rerun entity paths
+        converters={
             Glob("world/debug_navigation"): lambda grid: grid.to_rerun(
                 colormap="Purples",
                 z_offset=0.015,
-                brightness=0.75,
-                cost_range=[0, 40],
+                brightness=0.5,
             ),
         },
     )
