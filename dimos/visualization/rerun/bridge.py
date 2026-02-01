@@ -100,7 +100,7 @@ class Config(ModuleConfig):
         default_factory=lambda: [LCM(autoconf=True)]
     )
 
-    converters: dict[Glob | str, Callable[[Any], Archetype]] = field(default_factory=dict)
+    visual_override: dict[Glob | str, Callable[[Any], Archetype]] = field(default_factory=dict)
 
     entity_prefix: str = "world"
     topic_to_entity: Callable[[Any], str] | None = None
@@ -131,10 +131,12 @@ class RerunBridgeModule(Module):
         super().__init__(**kwargs)
 
     @lru_cache(maxsize=256)
-    def _converter_for_entity_path(self, entity_path: str) -> Callable[[Any], RerunData | None]:
-        """Return a composed converter for the entity path.
+    def _visual_override_for_entity_path(
+        self, entity_path: str
+    ) -> Callable[[Any], RerunData | None]:
+        """Return a composed visual override for the entity path.
 
-        Chains matching converters from config, ending with final_convert
+        Chains matching overrides from config, ending with final_convert
         which handles .to_rerun() or passes through Archetypes.
         """
         from rerun._baseclasses import Archetype
@@ -142,7 +144,7 @@ class RerunBridgeModule(Module):
         # find all matching converters for this entity path
         matches = [
             fn
-            for pattern, fn in self.config.converters.items()
+            for pattern, fn in self.config.visual_override.items()
             if pattern_matches(pattern, entity_path)
         ]
 
@@ -177,8 +179,8 @@ class RerunBridgeModule(Module):
         # convert a potentially complex topic object into an str rerun entity path
         entity_path: str = self._get_entity_path(topic)
 
-        # apply converters (including final_convert which handles .to_rerun())
-        rerun_data: RerunData | None = self._converter_for_entity_path(entity_path)(msg)
+        # apply visual overrides (including final_convert which handles .to_rerun())
+        rerun_data: RerunData | None = self._visual_override_for_entity_path(entity_path)(msg)
 
         # converters can also suppress logging by returning None
         if not rerun_data:
@@ -249,7 +251,7 @@ def main() -> None:
         # is acceptable here
         pubsubs=[LCM(autoconf=True)],
         # custom converters for specific rerun entity paths
-        converters={
+        visual_override={
             Glob("world/debug_navigation"): lambda grid: grid.to_rerun(
                 colormap="Purples",
                 z_offset=0.015,

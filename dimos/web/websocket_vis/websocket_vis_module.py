@@ -228,8 +228,9 @@ class WebsocketVisModule(Module):
         async def serve_index(request):  # type: ignore[no-untyped-def]
             """Serve appropriate HTML based on viewer mode."""
             # If running native Rerun, redirect to standalone command center
-            if self._global_config.viewer_backend == "rerun":
+            if self._global_config.viewer_backend != "rerun-web":
                 return RedirectResponse(url="/command-center")
+
             # Otherwise serve full dashboard with Rerun iframe
             return FileResponse(_DASHBOARD_HTML, media_type="text/html")
 
