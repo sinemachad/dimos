@@ -33,6 +33,7 @@ all_blueprints = {
     "demo-object-scene-registration": "dimos.perception.demo_object_scene_registration:demo_object_scene_registration",
     "demo-osm": "dimos.mapping.osm.demo_osm:demo_osm",
     "demo-skill": "dimos.agents.skills.demo_skill:demo_skill",
+    "dual-xarm6-planner": "dimos.manipulation.manipulation_blueprints:dual_xarm6_planner",
     "unitree-g1": "dimos.robot.unitree_webrtc.unitree_g1_blueprints:unitree_g1",
     "unitree-g1-agentic": "dimos.robot.unitree_webrtc.unitree_g1_blueprints:unitree_g1_agentic",
     "unitree-g1-agentic-sim": "dimos.robot.unitree_webrtc.unitree_g1_blueprints:unitree_g1_agentic_sim",
@@ -54,6 +55,8 @@ all_blueprints = {
     "unitree-go2-spatial": "dimos.robot.unitree_webrtc.unitree_go2_blueprints:unitree_go2_spatial",
     "unitree-go2-temporal-memory": "dimos.robot.unitree_webrtc.unitree_go2_blueprints:unitree_go2_temporal_memory",
     "unitree-go2-vlm-stream-test": "dimos.robot.unitree_webrtc.unitree_go2_blueprints:unitree_go2_vlm_stream_test",
+    "xarm6-planner-only": "dimos.manipulation.manipulation_blueprints:xarm6_planner_only",
+    "xarm7-planner-coordinator": "dimos.manipulation.manipulation_blueprints:xarm7_planner_coordinator",
 }
 
 
@@ -66,7 +69,7 @@ all_modules = {
     "demo_robot": "dimos.agents.skills.demo_robot",
     "depth_module": "dimos.robot.unitree_webrtc.depth_module",
     "detection3d_module": "dimos.perception.detection.module3D",
-    "detectionDB_module": "dimos.perception.detection.moduleDB",
+    "detection_db_module": "dimos.perception.detection.moduleDB",
     "foxglove_bridge": "dimos.robot.foxglove_bridge",
     "g1_connection": "dimos.robot.unitree.connection.g1",
     "g1_sim_connection": "dimos.robot.unitree.connection.g1sim",
@@ -78,6 +81,7 @@ all_modules = {
     "joint_trajectory_controller": "dimos.manipulation.control.trajectory_controller.joint_trajectory_controller",
     "keyboard_teleop": "dimos.robot.unitree_webrtc.keyboard_teleop",
     "llm_agent": "dimos.agents.agent",
+    "manipulation_module": "dimos.manipulation.manipulation_module",
     "mapper": "dimos.robot.unitree_webrtc.type.map",
     "navigation_skill": "dimos.agents.skills.navigation",
     "object_scene_registration_module": "dimos.perception.object_scene_registration",
