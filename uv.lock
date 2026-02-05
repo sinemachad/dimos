@@ -1496,6 +1496,7 @@ dependencies = [
     { name = "numba" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "open3d-unofficial-arm" },
     { name = "opencv-python" },
     { name = "plotext" },
     { name = "plum-dispatch" },
@@ -1790,6 +1791,7 @@ requires-dist = [
     { name = "onnxruntime-gpu", marker = "platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'jetson-jp6-cuda126'", specifier = "==1.23.0", index = "https://pypi.jetson-ai-lab.io/jp6/cu126" },
     { name = "onnxruntime-gpu", marker = "(platform_machine != 'aarch64' and extra == 'cuda') or (sys_platform != 'linux' and extra == 'cuda')", specifier = ">=1.17.1" },
     { name = "open-clip-torch", marker = "extra == 'misc'", specifier = "==3.2.0" },
+    { name = "open3d-unofficial-arm" },
     { name = "openai", marker = "extra == 'agents'" },
     { name = "openai-whisper", marker = "extra == 'agents'" },
     { name = "opencv-contrib-python", marker = "extra == 'misc'", specifier = "==4.10.0.84" },
@@ -5739,6 +5741,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/30/46/fb8be250fa7fcfc56fbeb41583645e18d868268f67fbbbeb8ed62a8ff18a/open_clip_torch-3.2.0.tar.gz", hash = "sha256:62b7743012ccc40fb7c64819fa762fba0a13dd74585ac733babe58c2974c2506", size = 1502853, upload-time = "2025-09-21T17:32:08.289Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/94/91/397327cc1597fa317942cc15bef414175eee4b3c2263b34407c57f3521f9/open_clip_torch-3.2.0-py3-none-any.whl", hash = "sha256:e1f5b3ecbadb6d8ea64b1f887db23efee9739e7c0d0075a8a2a3cabae8fed8d1", size = 1546677, upload-time = "2025-09-21T17:32:06.269Z" },
+]
+
+[[package]]
+name = "open3d-unofficial-arm"
+version = "0.19.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/4b/867e2efa690bd48d669cc71d3a3b936539e2b736455a354d9a4471980ce1/open3d_unofficial_arm-0.19.0.tar.gz", hash = "sha256:1ef95ef5e4151c9edca6d67cc68932c4d0cbbaa09d63ec4ae4d569528428c974", size = 96018904, upload-time = "2026-02-05T17:28:26.718Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6e/06/c29e589f333408464918990149908aaf774e48b195dbd9de0b0a568961bc/open3d_unofficial_arm-0.19.0-py3-none-any.whl", hash = "sha256:6cec8de41009ca69e72939e71e2af85dd6e820264321d73be8dfd43ec4073784", size = 96017592, upload-time = "2026-02-05T17:27:54.444Z" },
 ]
 
 [[package]]
