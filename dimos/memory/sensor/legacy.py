@@ -208,6 +208,30 @@ class LegacyPickleStore(TimeSeriesStore[T]):
 
         return closest_ts
 
+    def _count(self) -> int:
+        return sum(1 for _ in self._iter_files())
+
+    def _last_timestamp(self) -> float | None:
+        last_ts: float | None = None
+        for ts, _ in self._iter_items():
+            last_ts = ts
+        return last_ts
+
+    def _find_before(self, timestamp: float) -> tuple[float, T] | None:
+        result: tuple[float, T] | None = None
+        for ts, data in self._iter_items():
+            if ts < timestamp:
+                result = (ts, data)
+            else:
+                break
+        return result
+
+    def _find_after(self, timestamp: float) -> tuple[float, T] | None:
+        for ts, data in self._iter_items():
+            if ts > timestamp:
+                return (ts, data)
+        return None
+
     # === Backward-compatible API (TimedSensorReplay/SensorReplay) ===
 
     @property

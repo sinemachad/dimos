@@ -14,7 +14,6 @@
 """Unified sensor storage and replay."""
 
 from abc import ABC, abstractmethod
-import bisect
 from collections.abc import Callable, Iterator
 import time
 from typing import Generic, TypeVar
@@ -24,6 +23,7 @@ from reactivex import operators as ops
 from reactivex.disposable import CompositeDisposable, Disposable
 from reactivex.observable import Observable
 from reactivex.scheduler import TimeoutScheduler
+from sortedcontainers import SortedKeyList  # type: ignore[import-untyped]
 
 from dimos.types.timestamped import Timestamped
 
@@ -69,6 +69,84 @@ class TimeSeriesStore(Generic[T], ABC):
     ) -> float | None:
         """Find closest timestamp. Backend can optimize (binary search, db index, etc.)."""
         ...
+
+    @abstractmethod
+    def _count(self) -> int:
+        """Return number of stored items."""
+        ...
+
+    @abstractmethod
+    def _last_timestamp(self) -> float | None:
+        """Return the last (largest) timestamp, or None if empty."""
+        ...
+
+    @abstractmethod
+    def _find_before(self, timestamp: float) -> tuple[float, T] | None:
+        """Find the last (ts, data) strictly before the given timestamp."""
+        ...
+
+    @abstractmethod
+    def _find_after(self, timestamp: float) -> tuple[float, T] | None:
+        """Find the first (ts, data) strictly after the given timestamp."""
+        ...
+
+    # --- Collection API (built on abstract methods) ---
+
+    def __len__(self) -> int:
+        return self._count()
+
+    def __iter__(self) -> Iterator[T]:
+        """Iterate over data items in timestamp order."""
+        for _, data in self._iter_items():
+            yield data
+
+    def last_timestamp(self) -> float | None:
+        """Get the last timestamp in the store."""
+        return self._last_timestamp()
+
+    def last(self) -> T | None:
+        """Get the last data item in the store."""
+        ts = self._last_timestamp()
+        if ts is None:
+            return None
+        return self._load(ts)
+
+    @property
+    def start_ts(self) -> float | None:
+        """Get the start timestamp of the store."""
+        return self.first_timestamp()
+
+    @property
+    def end_ts(self) -> float | None:
+        """Get the end timestamp of the store."""
+        return self._last_timestamp()
+
+    def time_range(self) -> tuple[float, float] | None:
+        """Get the time range (start, end) of the store."""
+        s = self.first_timestamp()
+        e = self._last_timestamp()
+        if s is None or e is None:
+            return None
+        return (s, e)
+
+    def duration(self) -> float:
+        """Get the duration of the store in seconds."""
+        r = self.time_range()
+        return (r[1] - r[0]) if r else 0.0
+
+    def find_before(self, timestamp: float) -> T | None:
+        """Find the last item strictly before the given timestamp."""
+        result = self._find_before(timestamp)
+        return result[1] if result else None
+
+    def find_after(self, timestamp: float) -> T | None:
+        """Find the first item strictly after the given timestamp."""
+        result = self._find_after(timestamp)
+        return result[1] if result else None
+
+    def slice_by_time(self, start: float, end: float) -> list[T]:
+        """Return items in [start, end) range."""
+        return [data for _, data in self._iter_items(start=start, end=end)]
 
     def save(self, *data: Timestamped) -> None:
         """Save one or more Timestamped items using their .ts attribute."""
@@ -331,47 +409,55 @@ class TimeSeriesStore(Generic[T], ABC):
 
 
 class InMemoryStore(TimeSeriesStore[T]):
-    """In-memory storage using dict. Good for live use."""
+    """In-memory storage using SortedKeyList. O(log n) insert, lookup, and range queries."""
 
     def __init__(self) -> None:
-        self._data: dict[float, T] = {}
-        self._sorted_timestamps: list[float] | None = None
+        self._entries: SortedKeyList = SortedKeyList(key=lambda entry: entry[0])
+        self._by_ts: dict[float, T] = {}
 
     def _save(self, timestamp: float, data: T) -> None:
-        self._data[timestamp] = data
-        self._sorted_timestamps = None  # Invalidate cache
+        if timestamp in self._by_ts:
+            # Update: remove old entry from sorted list, then re-add
+            old = self._by_ts[timestamp]
+            self._entries.remove((timestamp, old))
+        self._by_ts[timestamp] = data
+        self._entries.add((timestamp, data))
 
     def _load(self, timestamp: float) -> T | None:
-        return self._data.get(timestamp)
+        return self._by_ts.get(timestamp)
 
     def _delete(self, timestamp: float) -> T | None:
-        self._sorted_timestamps = None  # Invalidate cache
-        return self._data.pop(timestamp, None)
+        old = self._by_ts.pop(timestamp, None)
+        if old is not None:
+            self._entries.remove((timestamp, old))
+        return old
 
     def _iter_items(
         self, start: float | None = None, end: float | None = None
     ) -> Iterator[tuple[float, T]]:
-        for ts in self._get_sorted_timestamps():
-            if start is not None and ts < start:
-                continue
-            if end is not None and ts >= end:
-                break
-            yield (ts, self._data[ts])
+        if start is not None and end is not None:
+            it = self._entries.irange_key(start, end, (True, False))
+        elif start is not None:
+            it = self._entries.irange_key(min_key=start)
+        elif end is not None:
+            it = self._entries.irange_key(max_key=end, inclusive=(True, False))
+        else:
+            it = iter(self._entries)
+        yield from it
 
     def _find_closest_timestamp(
         self, timestamp: float, tolerance: float | None = None
     ) -> float | None:
-        timestamps = self._get_sorted_timestamps()
-        if not timestamps:
+        if not self._entries:
             return None
 
-        pos = bisect.bisect_left(timestamps, timestamp)
+        pos = self._entries.bisect_key_left(timestamp)
 
-        candidates = []
+        candidates: list[float] = []
         if pos > 0:
-            candidates.append(timestamps[pos - 1])
-        if pos < len(timestamps):
-            candidates.append(timestamps[pos])
+            candidates.append(self._entries[pos - 1][0])
+        if pos < len(self._entries):
+            candidates.append(self._entries[pos][0])
 
         if not candidates:
             return None
@@ -383,7 +469,26 @@ class InMemoryStore(TimeSeriesStore[T]):
 
         return closest
 
-    def _get_sorted_timestamps(self) -> list[float]:
-        if self._sorted_timestamps is None:
-            self._sorted_timestamps = sorted(self._data.keys())
-        return self._sorted_timestamps
+    def _count(self) -> int:
+        return len(self._by_ts)
+
+    def _last_timestamp(self) -> float | None:
+        if not self._entries:
+            return None
+        return self._entries[-1][0]  # type: ignore[no-any-return]
+
+    def _find_before(self, timestamp: float) -> tuple[float, T] | None:
+        if not self._entries:
+            return None
+        pos = self._entries.bisect_key_left(timestamp)
+        if pos > 0:
+            return self._entries[pos - 1]  # type: ignore[no-any-return]
+        return None
+
+    def _find_after(self, timestamp: float) -> tuple[float, T] | None:
+        if not self._entries:
+            return None
+        pos = self._entries.bisect_key_right(timestamp)
+        if pos < len(self._entries):
+            return self._entries[pos]  # type: ignore[no-any-return]
+        return None

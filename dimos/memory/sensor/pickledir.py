@@ -157,6 +157,37 @@ class PickleDirStore(TimeSeriesStore[T]):
         self._timestamps = timestamps
         return timestamps
 
+    def _count(self) -> int:
+        return len(self._get_timestamps())
+
+    def _last_timestamp(self) -> float | None:
+        timestamps = self._get_timestamps()
+        return timestamps[-1] if timestamps else None
+
+    def _find_before(self, timestamp: float) -> tuple[float, T] | None:
+        timestamps = self._get_timestamps()
+        if not timestamps:
+            return None
+        pos = bisect.bisect_left(timestamps, timestamp)
+        if pos > 0:
+            ts = timestamps[pos - 1]
+            data = self._load(ts)
+            if data is not None:
+                return (ts, data)
+        return None
+
+    def _find_after(self, timestamp: float) -> tuple[float, T] | None:
+        timestamps = self._get_timestamps()
+        if not timestamps:
+            return None
+        pos = bisect.bisect_right(timestamps, timestamp)
+        if pos < len(timestamps):
+            ts = timestamps[pos]
+            data = self._load(ts)
+            if data is not None:
+                return (ts, data)
+        return None
+
     def _load_file(self, filepath: Path) -> T | None:
         """Load data from a pickle file (LRU cached)."""
         try:

@@ -223,6 +223,41 @@ class SqliteStore(TimeSeriesStore[T]):
 
         return closest
 
+    def _count(self) -> int:
+        conn = self._get_conn()
+        cursor = conn.execute(f"SELECT COUNT(*) FROM {self._table}")
+        return cursor.fetchone()[0]  # type: ignore[no-any-return]
+
+    def _last_timestamp(self) -> float | None:
+        conn = self._get_conn()
+        cursor = conn.execute(f"SELECT MAX(timestamp) FROM {self._table}")
+        row = cursor.fetchone()
+        if row is None or row[0] is None:
+            return None
+        return row[0]  # type: ignore[no-any-return]
+
+    def _find_before(self, timestamp: float) -> tuple[float, T] | None:
+        conn = self._get_conn()
+        cursor = conn.execute(
+            f"SELECT timestamp, data FROM {self._table} WHERE timestamp < ? ORDER BY timestamp DESC LIMIT 1",
+            (timestamp,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return (row[0], pickle.loads(row[1]))
+
+    def _find_after(self, timestamp: float) -> tuple[float, T] | None:
+        conn = self._get_conn()
+        cursor = conn.execute(
+            f"SELECT timestamp, data FROM {self._table} WHERE timestamp > ? ORDER BY timestamp ASC LIMIT 1",
+            (timestamp,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return (row[0], pickle.loads(row[1]))
+
     def close(self) -> None:
         """Close the database connection."""
         if self._conn is not None:

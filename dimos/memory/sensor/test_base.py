@@ -451,6 +451,109 @@ class TestTimeSeriesStore:
         ]
 
 
+@pytest.mark.parametrize("store_factory,store_name", testdata)
+class TestCollectionAPI:
+    """Test new collection API methods on all backends."""
+
+    def test_len(self, store_factory, store_name, temp_dir):
+        store = store_factory(temp_dir)
+        assert len(store) == 0
+        store.save(SampleData("a", 1.0), SampleData("b", 2.0), SampleData("c", 3.0))
+        assert len(store) == 3
+
+    def test_iter(self, store_factory, store_name, temp_dir):
+        store = store_factory(temp_dir)
+        store.save(SampleData("a", 1.0), SampleData("b", 2.0))
+        items = list(store)
+        assert items == [SampleData("a", 1.0), SampleData("b", 2.0)]
+
+    def test_last_timestamp(self, store_factory, store_name, temp_dir):
+        store = store_factory(temp_dir)
+        assert store.last_timestamp() is None
+        store.save(SampleData("a", 1.0), SampleData("b", 2.0), SampleData("c", 3.0))
+        assert store.last_timestamp() == 3.0
+
+    def test_last(self, store_factory, store_name, temp_dir):
+        store = store_factory(temp_dir)
+        assert store.last() is None
+        store.save(SampleData("a", 1.0), SampleData("b", 2.0), SampleData("c", 3.0))
+        assert store.last() == SampleData("c", 3.0)
+
+    def test_start_end_ts(self, store_factory, store_name, temp_dir):
+        store = store_factory(temp_dir)
+        assert store.start_ts is None
+        assert store.end_ts is None
+        store.save(SampleData("a", 1.0), SampleData("b", 2.0), SampleData("c", 3.0))
+        assert store.start_ts == 1.0
+        assert store.end_ts == 3.0
+
+    def test_time_range(self, store_factory, store_name, temp_dir):
+        store = store_factory(temp_dir)
+        assert store.time_range() is None
+        store.save(SampleData("a", 1.0), SampleData("b", 5.0))
+        assert store.time_range() == (1.0, 5.0)
+
+    def test_duration(self, store_factory, store_name, temp_dir):
+        store = store_factory(temp_dir)
+        assert store.duration() == 0.0
+        store.save(SampleData("a", 1.0), SampleData("b", 5.0))
+        assert store.duration() == 4.0
+
+    def test_find_before(self, store_factory, store_name, temp_dir):
+        store = store_factory(temp_dir)
+        store.save(SampleData("a", 1.0), SampleData("b", 2.0), SampleData("c", 3.0))
+
+        assert store.find_before(0.5) is None
+        assert store.find_before(1.0) is None  # strictly before
+        assert store.find_before(1.5) == SampleData("a", 1.0)
+        assert store.find_before(2.5) == SampleData("b", 2.0)
+        assert store.find_before(10.0) == SampleData("c", 3.0)
+
+    def test_find_after(self, store_factory, store_name, temp_dir):
+        store = store_factory(temp_dir)
+        store.save(SampleData("a", 1.0), SampleData("b", 2.0), SampleData("c", 3.0))
+
+        assert store.find_after(0.5) == SampleData("a", 1.0)
+        assert store.find_after(1.0) == SampleData("b", 2.0)  # strictly after
+        assert store.find_after(2.5) == SampleData("c", 3.0)
+        assert store.find_after(3.0) is None  # strictly after
+        assert store.find_after(10.0) is None
+
+    def test_slice_by_time(self, store_factory, store_name, temp_dir):
+        store = store_factory(temp_dir)
+        store.save(
+            SampleData("a", 1.0),
+            SampleData("b", 2.0),
+            SampleData("c", 3.0),
+            SampleData("d", 4.0),
+        )
+
+        # [2.0, 4.0) should include b, c
+        result = store.slice_by_time(2.0, 4.0)
+        assert result == [SampleData("b", 2.0), SampleData("c", 3.0)]
+
+
+class TestInMemoryStoreUpdate:
+    """Test InMemoryStore duplicate timestamp handling."""
+
+    def test_overwrite_existing_timestamp(self):
+        store: InMemoryStore[str] = InMemoryStore()
+        store.save_raw(1.0, "old")
+        store.save_raw(1.0, "new")
+        assert store.load(1.0) == "new"
+        assert len(store) == 1
+
+    def test_delete(self):
+        store: InMemoryStore[str] = InMemoryStore()
+        store.save_raw(1.0, "a")
+        store.save_raw(2.0, "b")
+        assert len(store) == 2
+        deleted = store._delete(1.0)
+        assert deleted == "a"
+        assert len(store) == 1
+        assert store.load(1.0) is None
+
+
 class TestNonTimestampedData:
     """Test TimeSeriesStore with plain (non-Timestamped) data types."""
 
@@ -514,3 +617,104 @@ class TestNonTimestampedData:
         assert store.load(2.0) == [2.0, "data_b"]
 
         disposable.dispose()
+
+
+class TestPerformance:
+    """Benchmarks comparing InMemoryStore vs TimestampedCollection."""
+
+    N = 100_000
+
+    def _make_populated_store(self) -> InMemoryStore[SampleData]:
+        store: InMemoryStore[SampleData] = InMemoryStore()
+        for i in range(self.N):
+            store.save_raw(float(i), SampleData(f"v{i}", float(i)))
+        return store
+
+    def _make_populated_collection(self) -> "TimestampedCollection[SampleData]":
+        from dimos.types.timestamped import TimestampedCollection
+
+        coll: TimestampedCollection[SampleData] = TimestampedCollection()
+        for i in range(self.N):
+            coll.add(SampleData(f"v{i}", float(i)))
+        return coll
+
+    def test_insert_performance(self) -> None:
+        """Insert N items. InMemoryStore should match TimestampedCollection."""
+        import time as time_mod
+
+        from dimos.types.timestamped import TimestampedCollection
+
+        store: InMemoryStore[SampleData] = InMemoryStore()
+        t0 = time_mod.perf_counter()
+        for i in range(self.N):
+            store.save_raw(float(i), SampleData(f"v{i}", float(i)))
+        store_time = time_mod.perf_counter() - t0
+
+        coll: TimestampedCollection[SampleData] = TimestampedCollection()
+        t0 = time_mod.perf_counter()
+        for i in range(self.N):
+            coll.add(SampleData(f"v{i}", float(i)))
+        coll_time = time_mod.perf_counter() - t0
+
+        print(f"\nInsert {self.N}: store={store_time:.3f}s, collection={coll_time:.3f}s")
+        assert store_time < coll_time * 5
+
+    def test_find_closest_performance(self) -> None:
+        """find_closest on N items. Both should be O(log n)."""
+        import random
+        import time as time_mod
+
+        store = self._make_populated_store()
+        coll = self._make_populated_collection()
+
+        queries = [random.uniform(0, self.N) for _ in range(10_000)]
+
+        t0 = time_mod.perf_counter()
+        for q in queries:
+            store.find_closest(q)
+        store_time = time_mod.perf_counter() - t0
+
+        t0 = time_mod.perf_counter()
+        for q in queries:
+            coll.find_closest(q)
+        coll_time = time_mod.perf_counter() - t0
+
+        print(
+            f"\nfind_closest 10k on {self.N}: store={store_time:.3f}s, collection={coll_time:.3f}s"
+        )
+        assert store_time < coll_time * 5
+
+    def test_interleaved_write_read(self) -> None:
+        """Alternating write + find_closest. Old InMemoryStore was O(n log n) per read."""
+        import time as time_mod
+
+        store: InMemoryStore[SampleData] = InMemoryStore()
+
+        t0 = time_mod.perf_counter()
+        for i in range(self.N):
+            store.save_raw(float(i), SampleData(f"v{i}", float(i)))
+            if i % 10 == 0:
+                store.find_closest(float(i) / 2)
+        elapsed = time_mod.perf_counter() - t0
+
+        print(f"\nInterleaved write+read {self.N}: {elapsed:.3f}s")
+        assert elapsed < 10.0
+
+    def test_iteration_performance(self) -> None:
+        """Full iteration over N items."""
+        import time as time_mod
+
+        store = self._make_populated_store()
+        coll = self._make_populated_collection()
+
+        t0 = time_mod.perf_counter()
+        count_store = sum(1 for _ in store)
+        store_time = time_mod.perf_counter() - t0
+
+        t0 = time_mod.perf_counter()
+        count_coll = sum(1 for _ in coll)
+        coll_time = time_mod.perf_counter() - t0
+
+        assert count_store == count_coll == self.N
+        print(f"\nIterate {self.N}: store={store_time:.3f}s, collection={coll_time:.3f}s")
+        assert store_time < coll_time * 5

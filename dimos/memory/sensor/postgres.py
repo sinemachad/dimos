@@ -238,6 +238,50 @@ class PostgresStore(TimeSeriesStore[T], Resource):
 
         return closest
 
+    def _count(self) -> int:
+        self._ensure_table()
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) FROM {self._table}")
+            row = cur.fetchone()
+        return row[0] if row else 0  # type: ignore[no-any-return]
+
+    def _last_timestamp(self) -> float | None:
+        self._ensure_table()
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT MAX(timestamp) FROM {self._table}")
+            row = cur.fetchone()
+        if row is None or row[0] is None:
+            return None
+        return row[0]  # type: ignore[no-any-return]
+
+    def _find_before(self, timestamp: float) -> tuple[float, T] | None:
+        self._ensure_table()
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT timestamp, data FROM {self._table} WHERE timestamp < %s ORDER BY timestamp DESC LIMIT 1",
+                (timestamp,),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return (row[0], pickle.loads(row[1]))
+
+    def _find_after(self, timestamp: float) -> tuple[float, T] | None:
+        self._ensure_table()
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT timestamp, data FROM {self._table} WHERE timestamp > %s ORDER BY timestamp ASC LIMIT 1",
+                (timestamp,),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return (row[0], pickle.loads(row[1]))
+
 
 def reset_db(db: str = "dimensional", host: str = "localhost", port: int = 5432) -> None:
     """Drop and recreate database. Simple migration strategy.
