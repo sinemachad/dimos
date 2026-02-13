@@ -364,8 +364,8 @@ class TestDocLinking:
         )
 
         assert len(errors) == 0
-        # Should be relative path from docs/usage/ to docs/
-        assert "../" in new_content
+        # Should be relative path from docs/usage/ to target doc
+        assert "[Blueprints](blueprints.md)" in new_content
 
     def test_doc_not_found_error(self, file_index, doc_index):
         """Should error when doc doesn't exist."""
