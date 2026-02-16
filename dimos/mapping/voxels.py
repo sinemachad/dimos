@@ -89,6 +89,17 @@ class VoxelGridMapper(Module):
         self._last_publish_duration: float = 0.0  # how long last publish took
         self._frames_skipped: int = 0
         self._frames_processed: int = 0
+        self._rr_initialized: bool = False
+
+    def _ensure_rr(self) -> None:
+        """Initialize rerun recording in this process if not already done."""
+        if self._rr_initialized:
+            return
+        # Connect to existing "dimos" recording if the bridge started one,
+        # otherwise create a new one. init() with spawn=False is safe to call
+        # even if another process already called init("dimos").
+        rr.init("dimos", spawn=False)
+        self._rr_initialized = True
 
     @rpc
     def start(self) -> None:
@@ -140,6 +151,9 @@ class VoxelGridMapper(Module):
         self._frames_processed += 1
 
         if self.config.enable_telemetry:
+            self._ensure_rr()
+            rr.set_time("frame", sequence=self._frames_processed)
+            rr.set_time("wall_time", timestamp=time.time())
             rr.log("voxel_mapper/ingest_time_ms", rr.Scalars(ingest_duration * 1000))
             rr.log("voxel_mapper/map_size", rr.Scalars(self.size()))
             rr.log("voxel_mapper/frames_skipped", rr.Scalars(self._frames_skipped))
@@ -154,6 +168,9 @@ class VoxelGridMapper(Module):
 
         self._last_publish_duration = publish_duration
         if self.config.enable_telemetry:
+            self._ensure_rr()
+            rr.set_time("frame", sequence=self._frames_processed)
+            rr.set_time("wall_time", timestamp=time.time())
             rr.log("voxel_mapper/publish_time_ms", rr.Scalars(publish_duration * 1000))
 
         self.global_map.publish(pc)
