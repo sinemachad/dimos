@@ -5,18 +5,4 @@ cd "$REPO_ROOT"
 
 bin/pr-name-check
 
-echo "Ensuring pip versions are correct"
-time uv sync --frozen --extra misc --extra visualization --extra agents --extra web --extra perception --extra unitree --extra manipulation --extra cpu --extra dev --extra sim --extra drone --extra base
-
-echo "Running pre-commit checks"
-time pre-commit run --all-files
-
-echo "Running mypy checks"
-time uv run mypy --python-version 3.10 --python-version 3.12 dimos
-
-echo "# "
-echo "# "
-echo "# pytest fast"
-echo "# "
-echo "# "
-time uv run bin/pytest-fast
+bin/ci-fast
