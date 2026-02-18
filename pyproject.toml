@@ -191,7 +191,8 @@ manipulation = [
 
 cpu = [
     # CPU inference backends
-    "onnxruntime",
+    "onnxruntime<1.24; python_version < '3.11'",
+    "onnxruntime; python_version >= '3.11'",
     "ctransformers==0.2.27",
 ]
 
