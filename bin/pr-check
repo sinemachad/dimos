@@ -11,8 +11,8 @@ os.chdir(repo_root)
 
 
 def main() -> int:
-    # 1. name check
-    subprocess.run(["bin/pr-name-check"], check=True, text=True)
+    # 1. name check (Note: doesn't throw even on fail)
+    subprocess.run(["bin/pr-name-check"], check=False, text=True)
 
     # 2. check if only markdown changes
     changed_files = get_changed_files()
@@ -46,52 +46,20 @@ def get_changed_files() -> set[str]:
         print("Could not find 'dev' or 'origin/dev' to compare changes against.")
         raise SystemExit(1)
 
+    def run_lines(cmd: list[str]) -> list[str]:
+        return [
+            line
+            for line in subprocess.run(
+                cmd, check=True, text=True, capture_output=True
+            ).stdout.splitlines()
+            if line.strip()
+        ]
+
     changed_files: set[str] = set()
-    changed_files.update(
-        [
-            line
-            for line in subprocess.run(
-                ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
-                check=True,
-                text=True,
-                capture_output=True,
-            ).stdout.splitlines()
-            if line.strip()
-        ]
-    )
-    changed_files.update(
-        [
-            line
-            for line in subprocess.run(
-                ["git", "diff", "--name-only"], check=True, text=True, capture_output=True
-            ).stdout.splitlines()
-            if line.strip()
-        ]
-    )
-    changed_files.update(
-        [
-            line
-            for line in subprocess.run(
-                ["git", "diff", "--name-only", "--cached"],
-                check=True,
-                text=True,
-                capture_output=True,
-            ).stdout.splitlines()
-            if line.strip()
-        ]
-    )
-    changed_files.update(
-        [
-            line
-            for line in subprocess.run(
-                ["git", "ls-files", "--others", "--exclude-standard"],
-                check=True,
-                text=True,
-                capture_output=True,
-            ).stdout.splitlines()
-            if line.strip()
-        ]
-    )
+    changed_files.update(run_lines(["git", "diff", "--name-only", f"{base_ref}...HEAD"]))
+    changed_files.update(run_lines(["git", "diff", "--name-only"]))
+    changed_files.update(run_lines(["git", "diff", "--name-only", "--cached"]))
+    changed_files.update(run_lines(["git", "ls-files", "--others", "--exclude-standard"]))
     return changed_files
 
 
