@@ -362,6 +362,8 @@ module = [
     "open_clip",
     "piper_sdk.*",
     "plotext",
+    "pydrake",
+    "pydrake.*",
     "plum.*",
     "pycuda",
     "pycuda.*",
