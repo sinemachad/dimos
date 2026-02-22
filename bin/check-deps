@@ -1,0 +1,484 @@
+#!/usr/bin/env python3
+"""
+bin/check-deps: Analyze which pip packages are used by dimos source files.
+
+For each pip package in pyproject.toml, shows which source files use it
+(directly or indirectly via intra-dimos imports). Packages with no users
+are flagged as candidates for removal.
+
+Usage:
+    bin/check-deps [--json] [--package PACKAGE_NAME]
+
+Options:
+    --json              Output results as JSON
+    --package NAME      Show details for a specific pip package only
+    --unused-only       Only show unused packages
+"""
+
+import argparse
+import ast
+from collections import defaultdict
+import json
+from pathlib import Path
+import sys
+
+try:
+    import tomllib
+except ImportError:
+    print("ERROR: tomllib required (Python 3.11+)", file=sys.stderr)
+    sys.exit(1)
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DIMOS_ROOT = REPO_ROOT / "dimos"
+PYPROJECT = REPO_ROOT / "pyproject.toml"
+
+# Mapping: normalized pip package name -> list of Python import names it provides.
+# Normalized means: lowercase, hyphens and dots replaced with underscores.
+PIP_TO_IMPORT: dict[str, list[str]] = {
+    # Core
+    "dimos_lcm": ["dimos_lcm"],
+    "pyturbojpeg": ["turbojpeg"],
+    "numpy": ["numpy"],
+    "scipy": ["scipy"],
+    "pin": ["pin", "pinocchio"],
+    "reactivex": ["reactivex", "rx"],
+    "asyncio": ["asyncio"],
+    "sortedcontainers": ["sortedcontainers"],
+    "pydantic": ["pydantic"],
+    "python_dotenv": ["dotenv"],
+    "annotation_protocol": ["annotation_protocol"],
+    "lazy_loader": ["lazy_loader"],
+    "dask": ["dask"],
+    "plum_dispatch": ["plum"],
+    "structlog": ["structlog"],
+    "colorlog": ["colorlog"],
+    "opencv_python": ["cv2"],
+    "opencv_python_headless": ["cv2"],
+    "open3d_unofficial_arm": ["open3d"],
+    "open3d": ["open3d"],
+    "pydantic_settings": ["pydantic_settings"],
+    "textual": ["textual"],
+    "terminaltexteffects": ["terminaltexteffects"],
+    "typer": ["typer"],
+    "plotext": ["plotext"],
+    "numba": ["numba"],
+    "llvmlite": ["llvmlite"],
+    "rerun_sdk": ["rerun"],
+    "toolz": ["toolz"],
+    # Misc optional
+    "cerebras_cloud_sdk": ["cerebras"],
+    "yapf": ["yapf"],
+    "typeguard": ["typeguard"],
+    "empy": ["em"],
+    "catkin_pkg": ["catkin_pkg"],
+    "lark": ["lark"],
+    "tiktoken": ["tiktoken"],
+    "python_multipart": ["multipart"],
+    "tensorzero": ["tensorzero"],
+    "ipykernel": ["ipykernel"],
+    "sentence_transformers": ["sentence_transformers"],
+    "scikit_learn": ["sklearn"],
+    "timm": ["timm"],
+    "edgetam_dimos": ["sam2"],  # edgetam-dimos provides the sam2 module
+    "opencv_contrib_python": ["cv2"],
+    "open_clip_torch": ["open_clip"],
+    "torchreid": ["torchreid"],
+    "gdown": ["gdown"],
+    "tensorboard": ["tensorboard"],
+    "googlemaps": ["googlemaps"],
+    "onnx": ["onnx"],
+    "einops": ["einops"],
+    "xarm_python_sdk": ["xarm"],
+    # Agents
+    "langchain": ["langchain"],
+    "langchain_chroma": ["langchain_chroma"],
+    "langchain_core": ["langchain_core"],
+    "langchain_openai": ["langchain_openai"],
+    "langchain_text_splitters": ["langchain_text_splitters"],
+    "langchain_huggingface": ["langchain_huggingface"],
+    "langchain_ollama": ["langchain_ollama"],
+    "bitsandbytes": ["bitsandbytes"],
+    "ollama": ["ollama"],
+    "anthropic": ["anthropic"],
+    "openai": ["openai"],
+    "openai_whisper": ["whisper"],
+    "sounddevice": ["sounddevice"],
+    "mcp": ["mcp"],
+    # Web
+    "fastapi": ["fastapi"],
+    "sse_starlette": ["sse_starlette"],
+    "uvicorn": ["uvicorn"],
+    "ffmpeg_python": ["ffmpeg"],
+    "soundfile": ["soundfile"],
+    # Perception
+    "ultralytics": ["ultralytics"],
+    "filterpy": ["filterpy"],
+    "pillow": ["PIL"],
+    "lap": ["lap"],
+    "transformers": ["transformers"],
+    "moondream": ["moondream"],
+    "omegaconf": ["omegaconf"],
+    "hydra_core": ["hydra"],
+    # Unitree
+    "unitree_webrtc_connect_leshy": ["unitree_webrtc_connect"],
+    # Manipulation
+    "drake": ["pydrake"],
+    "piper_sdk": ["piper_sdk"],
+    "kaleido": ["kaleido"],
+    "plotly": ["plotly"],
+    "xacro": ["xacro"],
+    "matplotlib": ["matplotlib"],
+    "pyyaml": ["yaml"],
+    # CPU / CUDA
+    "onnxruntime": ["onnxruntime"],
+    "ctransformers": ["ctransformers"],
+    "cupy_cuda12x": ["cupy"],
+    "nvidia_nvimgcodec_cu12": ["nvidia_nvimgcodec"],
+    "onnxruntime_gpu": ["onnxruntime"],
+    "xformers": ["xformers"],
+    # Dev
+    "ruff": ["ruff"],
+    "mypy": ["mypy"],
+    "pre_commit": ["pre_commit"],
+    "pytest": ["pytest"],
+    "pytest_asyncio": ["pytest_asyncio"],
+    "pytest_mock": ["pytest_mock"],
+    "pytest_env": ["pytest_env"],
+    "pytest_timeout": ["pytest_timeout"],
+    "coverage": ["coverage"],
+    "requests_mock": ["requests_mock"],
+    "watchdog": ["watchdog"],
+    "md_babel_py": ["md_babel"],
+    "python_lsp_server": ["pylsp"],
+    "python_lsp_ruff": ["pylsp_ruff"],
+    "py_spy": ["pyspy"],
+    # Type stubs (unlikely to be directly imported)
+    "lxml_stubs": ["lxml"],
+    "pandas_stubs": ["pandas"],
+    "types_pysocks": [],
+    "types_pyyaml": [],
+    "types_colorama": [],
+    "types_defusedxml": [],
+    "types_gevent": [],
+    "types_greenlet": [],
+    "types_jmespath": [],
+    "types_jsonschema": [],
+    "types_networkx": [],
+    "types_protobuf": [],
+    "types_psutil": [],
+    "types_pytz": [],
+    "types_simplejson": [],
+    "types_tabulate": [],
+    "types_tensorflow": [],
+    "types_tqdm": [],
+    "types_psycopg2": [],
+    # PSql
+    "psycopg2_binary": ["psycopg2"],
+    # Sim
+    "mujoco": ["mujoco"],
+    "playground": ["mujoco_playground", "playground"],
+    "pygame": ["pygame"],
+    # Drone
+    "pymavlink": ["pymavlink"],
+    # DDS
+    "cyclonedds": ["cyclonedds"],
+    # Docker
+    "lcm": ["lcm"],
+}
+
+# Pip packages that are self-referential (dimos[extra]) - skip them
+SELF_REFERENTIAL_PREFIXES = ("dimos",)
+
+
+def normalize_pip_name(name: str) -> str:
+    """Normalize pip package name: lowercase, replace - and . with _."""
+    return name.lower().replace("-", "_").replace(".", "_")
+
+
+def parse_package_name(dep_spec: str) -> str | None:
+    """Extract bare package name from a dependency spec string."""
+    # Strip environment markers after semicolon
+    dep_spec = dep_spec.split(";")[0].strip()
+    # Strip extras (e.g. dask[complete] -> dask)
+    dep_spec = dep_spec.split("[")[0].strip()
+    # Strip URL-based deps (@ ...)
+    dep_spec = dep_spec.split("@")[0].strip()
+    # Strip version specifiers
+    for char in [">", "<", "=", "!", "~", " "]:
+        dep_spec = dep_spec.split(char)[0]
+    name = dep_spec.strip()
+    if not name:
+        return None
+    # Skip self-referential deps
+    norm = normalize_pip_name(name)
+    if any(norm == prefix or norm.startswith(prefix + "_") for prefix in SELF_REFERENTIAL_PREFIXES):
+        return None
+    return name
+
+
+def parse_pyproject_deps(pyproject: dict) -> dict[str, tuple[str, str]]:
+    """
+    Extract all pip dependencies from pyproject.toml.
+    Returns dict of {normalized_name: (original_name, group)}.
+    """
+    deps: dict[str, tuple[str, str]] = {}
+    project = pyproject.get("project", {})
+
+    for dep in project.get("dependencies", []):
+        name = parse_package_name(dep)
+        if name:
+            norm = normalize_pip_name(name)
+            deps[norm] = (name, "dependencies")
+
+    for group_name, group_deps in project.get("optional-dependencies", {}).items():
+        for dep in group_deps:
+            name = parse_package_name(dep)
+            if name:
+                norm = normalize_pip_name(name)
+                if norm not in deps:  # don't override core dep with optional
+                    deps[norm] = (name, group_name)
+
+    return deps
+
+
+def get_top_level_imports(filepath: Path) -> set[str]:
+    """
+    Extract top-level module names imported by a Python file using AST.
+    Includes imports inside TYPE_CHECKING blocks (they are static deps).
+    Returns set of top-level import names (e.g. 'numpy', 'cv2', 'dimos').
+    """
+    try:
+        source = filepath.read_text(encoding="utf-8", errors="ignore")
+        tree = ast.parse(source, filename=str(filepath))
+    except SyntaxError:
+        return set()
+
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.level == 0:  # absolute imports only
+                imports.add(node.module.split(".")[0])
+    return imports
+
+
+def get_dimos_imports(filepath: Path) -> set[str]:
+    """
+    Extract fully-qualified dimos module names imported by this file.
+    E.g. 'from dimos.core.module import X' -> 'dimos.core.module'
+    """
+    try:
+        source = filepath.read_text(encoding="utf-8", errors="ignore")
+        tree = ast.parse(source, filename=str(filepath))
+    except SyntaxError:
+        return set()
+
+    dimos_modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.module and node.level == 0 and node.module.startswith("dimos."):
+                dimos_modules.add(node.module)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("dimos."):
+                    dimos_modules.add(alias.name)
+    return dimos_modules
+
+
+def build_module_map(py_files: list[Path]) -> dict[str, Path]:
+    """Map dimos module names to file paths."""
+    module_map: dict[str, Path] = {}
+    for f in py_files:
+        rel = f.relative_to(REPO_ROOT)
+        parts = list(rel.parts)
+        if parts[-1] == "__init__.py":
+            parts = parts[:-1]
+        elif parts[-1].endswith(".py"):
+            parts[-1] = parts[-1][:-3]
+        module_name = ".".join(parts)
+        module_map[module_name] = f
+    return module_map
+
+
+def resolve_dimos_dep(module_name: str, module_map: dict[str, Path]) -> Path | None:
+    """Resolve a dimos module import to a file path."""
+    # Try exact match
+    if module_name in module_map:
+        return module_map[module_name]
+    # Try parent packages (for 'from dimos.core.module import X' where module is a package)
+    parts = module_name.split(".")
+    while parts:
+        candidate = ".".join(parts)
+        if candidate in module_map:
+            return module_map[candidate]
+        parts.pop()
+    return None
+
+
+def transitive_pip_deps(
+    start: Path,
+    file_direct_pip: dict[Path, set[str]],
+    file_dimos_deps: dict[Path, set[Path]],
+) -> tuple[set[str], set[str]]:
+    """
+    BFS through intra-dimos dependency graph to compute all pip deps.
+    Returns (direct_pip_deps, all_pip_deps_including_transitive).
+    """
+    direct = frozenset(file_direct_pip.get(start, set()))
+    visited: set[Path] = {start}
+    queue: list[Path] = [start]
+    all_pip: set[str] = set(direct)
+
+    while queue:
+        current = queue.pop()
+        for dep_file in file_dimos_deps.get(current, set()):
+            if dep_file not in visited:
+                visited.add(dep_file)
+                queue.append(dep_file)
+                all_pip.update(file_direct_pip.get(dep_file, set()))
+
+    return set(direct), all_pip
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Check which pip packages are used by dimos source files."
+    )
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument("--package", metavar="NAME", help="Show details for one package only")
+    parser.add_argument("--unused-only", action="store_true", help="Only show unused packages")
+    args = parser.parse_args()
+
+    # -------------------------------------------------------------------------
+    # 1. Parse pyproject.toml
+    # -------------------------------------------------------------------------
+    with open(PYPROJECT, "rb") as f:
+        pyproject = tomllib.load(f)
+
+    pip_deps = parse_pyproject_deps(pyproject)
+
+    # Build: import_name -> set of pip package norm names
+    import_to_pips: dict[str, set[str]] = defaultdict(set)
+    for pip_norm, (_pip_orig, _group) in pip_deps.items():
+        import_names = PIP_TO_IMPORT.get(pip_norm)
+        if import_names is None:
+            # Heuristic fallback: the normalized name itself
+            import_names = [pip_norm]
+        for imp in import_names:
+            import_to_pips[imp].add(pip_norm)
+
+    # -------------------------------------------------------------------------
+    # 2. Collect Python files and build intra-dimos graph
+    # -------------------------------------------------------------------------
+    py_files = sorted(DIMOS_ROOT.rglob("*.py"))
+    module_map = build_module_map(py_files)
+
+    file_all_imports: dict[Path, set[str]] = {}
+    file_dimos_deps: dict[Path, set[Path]] = defaultdict(set)
+
+    for f in py_files:
+        top_imports = get_top_level_imports(f)
+        file_all_imports[f] = top_imports
+
+        dimos_module_imports = get_dimos_imports(f)
+        for mod_name in dimos_module_imports:
+            resolved = resolve_dimos_dep(mod_name, module_map)
+            if resolved and resolved != f:
+                file_dimos_deps[f].add(resolved)
+
+    # -------------------------------------------------------------------------
+    # 3. Compute direct pip deps per file
+    # -------------------------------------------------------------------------
+    file_direct_pip: dict[Path, set[str]] = defaultdict(set)
+    for f in py_files:
+        for imp in file_all_imports[f]:
+            if imp in import_to_pips:
+                file_direct_pip[f].update(import_to_pips[imp])
+
+    # -------------------------------------------------------------------------
+    # 4. Compute transitive pip deps and invert the map
+    # -------------------------------------------------------------------------
+    pip_to_direct: dict[str, set[Path]] = defaultdict(set)
+    pip_to_all: dict[str, set[Path]] = defaultdict(set)
+
+    for f in py_files:
+        direct_pip, all_pip = transitive_pip_deps(f, file_direct_pip, file_dimos_deps)
+        for pkg in direct_pip:
+            pip_to_direct[pkg].add(f)
+        for pkg in all_pip:
+            pip_to_all[pkg].add(f)
+
+    # -------------------------------------------------------------------------
+    # 5. Output
+    # -------------------------------------------------------------------------
+    if args.json:
+        output: dict[str, object] = {}
+        for pip_norm, (pip_orig, group) in sorted(pip_deps.items()):
+            direct_files = sorted(
+                str(f.relative_to(REPO_ROOT)) for f in pip_to_direct.get(pip_norm, set())
+            )
+            indirect_files = sorted(
+                str(f.relative_to(REPO_ROOT))
+                for f in pip_to_all.get(pip_norm, set()) - pip_to_direct.get(pip_norm, set())
+            )
+            output[pip_norm] = {
+                "original_name": pip_orig,
+                "group": group,
+                "used": bool(pip_to_all.get(pip_norm)),
+                "direct_files": direct_files,
+                "indirect_files": indirect_files,
+            }
+        print(json.dumps(output, indent=2))
+        return
+
+    # Text output
+    unused: list[tuple[str, str, str]] = []
+    used: list[tuple[str, str, str, set[Path], set[Path]]] = []
+
+    for pip_norm, (pip_orig, group) in sorted(pip_deps.items()):
+        if args.package and pip_norm != normalize_pip_name(args.package):
+            continue
+        direct_files = pip_to_direct.get(pip_norm, set())
+        all_files = pip_to_all.get(pip_norm, set())
+        if not all_files:
+            unused.append((pip_norm, pip_orig, group))
+        else:
+            used.append((pip_norm, pip_orig, group, direct_files, all_files))
+
+    if not args.unused_only:
+        print("=" * 80)
+        print("USED PACKAGES")
+        print("=" * 80)
+        for _pip_norm, pip_orig, group, direct_files, all_files in used:
+            indirect_files = all_files - direct_files
+            group_label = f"[{group}]" if group != "dependencies" else "[core]"
+            print(f"\n  {pip_orig} {group_label}")
+            if direct_files:
+                print(f"    Direct ({len(direct_files)} files):")
+                for f in sorted(direct_files):
+                    print(f"      {f.relative_to(REPO_ROOT)}")
+            if indirect_files:
+                print(f"    Indirect ({len(indirect_files)} files):")
+                for f in sorted(indirect_files):
+                    print(f"      {f.relative_to(REPO_ROOT)}")
+        print()
+
+    print("=" * 80)
+    print(f"UNUSED PACKAGES ({len(unused)})")
+    print("=" * 80)
+    if unused:
+        for _pip_norm, pip_orig, group in unused:
+            group_label = f"[{group}]" if group != "dependencies" else "[core]"
+            print(f"  {pip_orig} {group_label}")
+        print()
+        print("NOTE: These packages have no detected static import usage in ./dimos.")
+        print("      Verify manually before removing — some may be used dynamically,")
+        print("      as CLI tools, or via conditional imports not visible in AST.")
+    else:
+        print("  (none - all packages are used)")
+
+
+if __name__ == "__main__":
+    main()
