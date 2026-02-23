@@ -374,6 +374,12 @@ elif [ "$MODE" = "bagfile" ]; then
     mkdir -p bagfiles config maps
 fi
 
+# Enable DRI device passthrough on systems that support it (not available on Jetson/Tegra)
+if [ -e "/dev/dri" ]; then
+    export DRI_DEVICE="/dev/dri"
+    echo -e "${GREEN}/dev/dri detected — enabling DRI device passthrough${NC}"
+fi
+
 # Build compose command
 COMPOSE_CMD="docker compose -f docker-compose.yml"
 if [ "$DEV_MODE" = "true" ]; then
