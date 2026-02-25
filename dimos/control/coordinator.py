@@ -86,9 +86,9 @@ class TaskConfig:
         model_path: Path to URDF/MJCF for IK solver (cartesian_ik/teleop_ik only)
         ee_joint_id: End-effector joint ID in model (cartesian_ik/teleop_ik only)
         hand: "left" or "right" controller hand (teleop_ik only)
-        gripper_joint: Joint name for gripper virtual joint (teleop_ik only)
-        gripper_open_pos: Gripper position at trigger 0.0 (teleop_ik only)
-        gripper_closed_pos: Gripper position at trigger 1.0 (teleop_ik only)
+        gripper_joint: Joint name for gripper virtual joint
+        gripper_open_pos: Gripper position at trigger 0.0
+        gripper_closed_pos: Gripper position at trigger 1.0
     """
 
     name: str

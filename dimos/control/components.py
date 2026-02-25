@@ -48,9 +48,7 @@ class HardwareComponent:
         adapter_type: Adapter type ("mock", "xarm", "piper")
         address: Connection address - IP for TCP, port for CAN
         auto_enable: Whether to auto-enable servos
-        parent_hardware_id: For GRIPPER type only — the hardware_id of the
-            manipulator whose adapter provides the gripper interface.
-            The gripper shares the parent's already-connected adapter.
+        parent_hardware_id: For GRIPPER type only — gripper shares the parent's already-connected adapter.
     """
 
     hardware_id: HardwareId
