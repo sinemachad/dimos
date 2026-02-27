@@ -147,8 +147,10 @@ class ROSNavConfig(DockerModuleConfig):
             self.docker_env["BAGFILE_PATH"] = self.bagfile_path
 
         # Pass host DISPLAY through for X11 forwarding (RViz, Unity)
-        if display := os.environ.get("DISPLAY"):
+        if display := os.environ.get("DISPLAY", ":0"):
             self.docker_env["DISPLAY"] = display
+
+        self.docker_env["QT_X11_NO_MITSHM"] = "1"
 
         repo_root = Path(__file__).parent.parent.parent
         self.docker_volumes += [
@@ -182,10 +184,14 @@ class ROSNavConfig(DockerModuleConfig):
             ("/tmp/.X11-unix", "/tmp/.X11-unix", "rw"),
         ]
 
-        # Mount ~/.Xauthority if it exists
-        xauth = Path.home() / ".Xauthority"
-        if xauth.exists():
-            self.docker_volumes.append((str(xauth), "/root/.Xauthority", "rw"))
+        # Mount Xauthority cookie for X11 forwarding.
+        # Honour $XAUTHORITY on the host (falls back to ~/.Xauthority) and
+        # place it at /tmp/.Xauthority inside the container so it is
+        # accessible regardless of which user the container runs as.
+        xauth_host = Path(os.environ.get("XAUTHORITY", str(Path.home() / ".Xauthority")))
+        if xauth_host.exists():
+            self.docker_volumes.append((str(xauth_host), "/tmp/.Xauthority", "ro"))
+            self.docker_env["XAUTHORITY"] = "/tmp/.Xauthority"
 
         # Mount bagfiles directory for bagfile mode
         bagfiles_dir = repo_root / "docker" / "navigation" / "bagfiles"

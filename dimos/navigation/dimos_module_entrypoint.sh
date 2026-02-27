@@ -24,6 +24,135 @@
 #   HARDWARE_MODE         Legacy: "true" → hardware mode. Prefer MODE instead.
 
 # NOTE: no set -e — individual step failures must not abort the whole entrypoint.
+
+# ── X11 diagnostics ───────────────────────────────────────────────────────
+# Usage (from host):
+#   docker exec <container> bash -c 'source /usr/local/bin/dimos_module_entrypoint.sh; why_is_x11_not_working'
+# Or inside the container just run:
+#   why_is_x11_not_working
+why_is_x11_not_working() {
+    local ok=true
+    echo "=== X11 Doctor ==="
+
+    # 1. DISPLAY
+    echo ""
+    echo "--- DISPLAY ---"
+    if [ -z "${DISPLAY:-}" ]; then
+        echo "  FAIL  DISPLAY is not set"
+        ok=false
+    else
+        echo "  OK    DISPLAY=${DISPLAY}"
+    fi
+
+    # 2. X11 unix socket directory
+    echo ""
+    echo "--- /tmp/.X11-unix socket directory ---"
+    if [ ! -d /tmp/.X11-unix ]; then
+        echo "  FAIL  /tmp/.X11-unix does not exist (volume not mounted?)"
+        ok=false
+    else
+        local sockets
+        sockets=$(ls /tmp/.X11-unix 2>/dev/null)
+        if [ -z "$sockets" ]; then
+            echo "  WARN  /tmp/.X11-unix exists but is empty (no display sockets)"
+            ok=false
+        else
+            echo "  OK    /tmp/.X11-unix contents: $sockets"
+        fi
+    fi
+
+    # 3. Socket for the specific DISPLAY
+    echo ""
+    echo "--- Display socket for DISPLAY=${DISPLAY:-<unset>} ---"
+    if [ -n "${DISPLAY:-}" ]; then
+        local display_num
+        display_num=$(echo "${DISPLAY}" | sed 's/.*:\([0-9]*\).*/\1/')
+        local sock="/tmp/.X11-unix/X${display_num}"
+        if [ -S "$sock" ]; then
+            echo "  OK    $sock exists and is a socket"
+            ls -la "$sock"
+        else
+            echo "  FAIL  $sock not found or not a socket"
+            ok=false
+        fi
+    else
+        echo "  SKIP  (DISPLAY not set)"
+    fi
+
+    # 4. XAUTHORITY file
+    echo ""
+    echo "--- XAUTHORITY ---"
+    local xauth_file="${XAUTHORITY:-$HOME/.Xauthority}"
+    if [ -z "${XAUTHORITY:-}" ]; then
+        echo "  WARN  XAUTHORITY env var not set; defaulting to $xauth_file"
+    else
+        echo "  OK    XAUTHORITY=${XAUTHORITY}"
+    fi
+    if [ -f "$xauth_file" ]; then
+        echo "  OK    $xauth_file exists ($(wc -c < "$xauth_file") bytes)"
+        ls -la "$xauth_file"
+    else
+        echo "  FAIL  $xauth_file not found (Xauthority not mounted?)"
+        ok=false
+    fi
+
+    # 5. xauth cookie list
+    echo ""
+    echo "--- xauth cookie entries ---"
+    if command -v xauth >/dev/null 2>&1; then
+        local cookie_out
+        cookie_out=$(XAUTHORITY="$xauth_file" xauth list 2>&1)
+        if [ -z "$cookie_out" ]; then
+            echo "  WARN  xauth list returned no entries (cookie file empty or wrong display)"
+            ok=false
+        else
+            echo "  OK    cookies found:"
+            echo "$cookie_out" | sed 's/^/        /'
+        fi
+    else
+        echo "  WARN  xauth not installed; cannot check cookies"
+    fi
+
+    # 6. Live connection test
+    echo ""
+    echo "--- Live connection test ---"
+    if command -v xdpyinfo >/dev/null 2>&1; then
+        if DISPLAY="${DISPLAY:-:0}" XAUTHORITY="$xauth_file" xdpyinfo >/dev/null 2>&1; then
+            echo "  OK    xdpyinfo connected to ${DISPLAY:-:0} successfully"
+        else
+            echo "  FAIL  xdpyinfo could not connect to ${DISPLAY:-:0}"
+            DISPLAY="${DISPLAY:-:0}" XAUTHORITY="$xauth_file" xdpyinfo 2>&1 | head -5 | sed 's/^/        /'
+            ok=false
+        fi
+    elif command -v xclock >/dev/null 2>&1; then
+        if DISPLAY="${DISPLAY:-:0}" XAUTHORITY="$xauth_file" xclock -display "${DISPLAY:-:0}" &
+           sleep 1 && kill %1 2>/dev/null; then
+            echo "  OK    xclock launched on ${DISPLAY:-:0}"
+        else
+            echo "  FAIL  xclock could not connect"
+            ok=false
+        fi
+    else
+        echo "  SKIP  neither xdpyinfo nor xclock installed; skipping live test"
+        echo "        Install with: apt-get install -y x11-utils"
+    fi
+
+    # 7. Summary
+    echo ""
+    echo "=== Summary ==="
+    if $ok; then
+        echo "  All checks passed — X11 should work."
+    else
+        echo "  One or more checks failed."
+        echo ""
+        echo "  Common fixes:"
+        echo "    • Mount the socket:   -v /tmp/.X11-unix:/tmp/.X11-unix"
+        echo "    • Mount the cookie:   -v \${XAUTHORITY:-\$HOME/.Xauthority}:/tmp/.Xauthority:ro"
+        echo "    • Set env vars:       -e DISPLAY -e XAUTHORITY=/tmp/.Xauthority"
+        echo "    • Allow local X:      xhost +local:  (run on host, less safe)"
+    fi
+    echo ""
+}
 echo '
 source /opt/ros/${ROS_DISTRO:-humble}/setup.bash
 source /ros2_ws/install/setup.bash
