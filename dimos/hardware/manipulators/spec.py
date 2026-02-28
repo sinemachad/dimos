@@ -96,17 +96,7 @@ class ManipulatorAdapter(HardwareAdapter, Protocol):
     - Force: Newtons
     """
 
-    def connect(self) -> bool:
-        """Connect to hardware. Returns True on success."""
-        ...
-
-    def disconnect(self) -> None:
-        """Disconnect from hardware."""
-        ...
-
-    def is_connected(self) -> bool:
-        """Check if connected."""
-        ...
+    # --- Info ---
 
     def get_info(self) -> ManipulatorInfo:
         """Get manipulator info (vendor, model, DOF)."""
