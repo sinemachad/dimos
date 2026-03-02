@@ -13,9 +13,10 @@
 #
 set -euo pipefail
 
-# If piped from curl (stdin is not a TTY), save to temp file and re-execute
-# This ensures interactive prompts work correctly
-if [ ! -t 0 ]; then
+# If piped from curl (stdin is not a TTY and we're not running from a file),
+# save to temp file and re-execute so interactive prompts get proper TTY input.
+# Detection: when `curl | bash`, $0 is "bash"; when `bash script.sh`, $0 is the path.
+if [ ! -t 0 ] && { [ "$0" = "bash" ] || [ "$0" = "-bash" ] || [ "$0" = "/bin/bash" ] || [ "$0" = "/usr/bin/bash" ] || [ "$0" = "sh" ] || [ "$0" = "/bin/sh" ]; }; then
     TMPSCRIPT="$(mktemp /tmp/dimos-install.XXXXXX.sh)"
     cat > "$TMPSCRIPT"
     chmod +x "$TMPSCRIPT"
@@ -97,25 +98,52 @@ prompt_choice() {
     local msg="$1" default="$2"
     shift 2
     local -a options=("$@")
+    local count=${#options[@]}
+
     if [[ "$NON_INTERACTIVE" == "1" ]]; then
         echo "$default"
         return
     fi
-    printf "\n%s%s%s\n\n" "$BOLD" "$msg" "$RESET"
-    local i=1
-    for opt in "${options[@]}"; do
-        if [[ "$i" == "$default" ]]; then
-            printf "  %s❯%s %s\n" "$CYAN" "$RESET" "$opt"
-        else
-            printf "    %s\n" "$opt"
+
+    local cursor=$((default - 1))
+
+    # Hide cursor
+    printf "\033[?25l" >/dev/tty
+
+    _draw_choice() {
+        if [[ "${1:-}" == "redraw" ]]; then
+            printf "\033[%dA" "$((count + 2))" >/dev/tty
         fi
-        ((i++))
+        printf "\n%s%s%s %s(↑/↓ move, enter select)%s\n" \
+            "$BOLD" "$msg" "$RESET" "$DIM" "$RESET" >/dev/tty
+        for ((i=0; i<count; i++)); do
+            if [[ "$i" == "$cursor" ]]; then
+                printf "  %s● %s%s\n" "$CYAN" "${options[$i]}" "$RESET" >/dev/tty
+            else
+                printf "  %s○%s %s\n" "$DIM" "$RESET" "${options[$i]}" >/dev/tty
+            fi
+        done
+    }
+
+    _draw_choice "first"
+
+    while true; do
+        local key
+        IFS= read -rsn1 key </dev/tty
+        if [[ "$key" == $'\x1b' ]]; then
+            read -rsn2 -t 0.1 key </dev/tty
+            case "$key" in
+                '[A') ((cursor > 0)) && ((cursor--)) ;;
+                '[B') ((cursor < count - 1)) && ((cursor++)) ;;
+            esac
+            _draw_choice "redraw"
+        elif [[ "$key" == "" ]]; then
+            break
+        fi
     done
-    printf "\n  enter choice [%s]: " "$default"
-    local choice
-    read -r choice </dev/tty || choice="$default"
-    choice="${choice:-$default}"
-    echo "$choice"
+
+    printf "\033[?25h" >/dev/tty
+    echo "$((cursor + 1))"
 }
 
 prompt_multi() {
@@ -1167,14 +1195,6 @@ main() {
         mac_major="$(echo "$DETECTED_OS_VERSION" | cut -d. -f1)"
         if [[ "$mac_major" -lt 12 ]] 2>/dev/null; then
             die "macOS ${DETECTED_OS_VERSION} is too old — 12.6+ required"
-        fi
-    fi
-
-    # Confirm before proceeding
-    if [[ "$NON_INTERACTIVE" != "1" ]]; then
-        printf "\n"
-        if ! prompt_yn "  ${CYAN}▸${RESET} ready to install? we\'ll walk you through the setup" "y"; then
-            die "installation cancelled"
         fi
     fi
 
