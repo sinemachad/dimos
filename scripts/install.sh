@@ -603,6 +603,24 @@ do_install_library() {
             (cd "$dir" && nix develop --command bash -c "set -euo pipefail; [[ \"\${SKIP_VENV:-}\" != 1 ]] && ${venv_flag} uv venv --python 3.12; source .venv/bin/activate; uv pip install 'dimos[${EXTRAS}]'")
         fi
     else
+        # Show what we're about to do and ask
+        printf "\n"
+        info "next step: create .venv and install Python packages"
+        dim "  will run: ${CYAN}cd ${dir} && uv venv --python 3.12 && uv pip install \"dimos[${EXTRAS}]\"${RESET}"
+        printf "\n"
+
+        if ! prompt_confirm "Install dependencies now?" "yes"; then
+            dim "  skipping dependency install"
+            printf "\n"
+            dim "  to install later, run:"
+            dim "    cd ${dir}"
+            dim "    uv venv --python 3.12"
+            dim "    source .venv/bin/activate"
+            dim "    uv pip install \"dimos[${EXTRAS}]\""
+            ok "project directory created at ${dir}"
+            return
+        fi
+
         if [[ -d "${dir}/.venv" ]] && [[ "$DRY_RUN" != "1" ]]; then
             warn "existing .venv found in ${dir}/"
             if prompt_confirm "Replace existing virtual environment?" "no"; then
@@ -628,6 +646,8 @@ do_install_dev() {
     if [[ -z "$dir" ]]; then dir=$(prompt_install_dir "$PWD/dimos" "dev") || die "cancelled"; fi
     INSTALL_DIR="$dir"
     info "developer install → ${dir}"
+
+    # Step 1: Clone or pull
     if [[ -d "$dir/.git" ]]; then
         info "existing clone found, pulling latest..."
         run_cmd "cd '$dir' && git pull --rebase origin $GIT_BRANCH"
@@ -635,13 +655,37 @@ do_install_dev() {
         info "cloning dimos (branch: ${GIT_BRANCH})..."
         run_cmd "GIT_LFS_SKIP_SMUDGE=1 git clone -b $GIT_BRANCH https://github.com/dimensionalOS/dimos.git '$dir'"
     fi
+
+    # Step 2: Install dependencies (ask first — this is the heavy part)
+    printf "\n"
+    info "next step: create .venv and install all Python dependencies"
+    if [[ "$USE_NIX" == "1" ]]; then
+        dim "  will run: ${CYAN}nix develop --command bash -c \"uv sync --all-extras --no-extra dds\"${RESET}"
+    else
+        dim "  will run: ${CYAN}cd ${dir} && uv sync --all-extras --no-extra dds${RESET}"
+    fi
+    dim "  this creates a .venv and installs ~430 packages (may take several minutes)"
+    printf "\n"
+
+    if ! prompt_confirm "Install dependencies now?" "yes"; then
+        dim "  skipping dependency install"
+        printf "\n"
+        dim "  to install later, run:"
+        dim "    cd ${dir}"
+        if [[ "$USE_NIX" == "1" ]]; then
+            dim "    nix develop --command bash -c \"uv sync --all-extras --no-extra dds\""
+        else
+            dim "    uv sync --all-extras --no-extra dds"
+        fi
+        ok "repository cloned to ${dir}"
+        return
+    fi
+
     if [[ "$USE_NIX" == "1" ]]; then
         verify_nix_develop "$dir"
-        info "syncing via nix develop..."
         if [[ "$DRY_RUN" == "1" ]]; then dim "[dry-run] nix develop + uv sync --all-extras --no-extra dds"
         else (cd "$dir" && nix develop --command bash -c "set -euo pipefail && uv sync --all-extras --no-extra dds"); fi
     else
-        info "syncing dependencies..."
         if [[ "$DRY_RUN" == "1" ]]; then dim "[dry-run] uv sync --all-extras --no-extra dds"
         else pushd "$dir" >/dev/null && uv sync --all-extras --no-extra dds && popd >/dev/null; fi
     fi
