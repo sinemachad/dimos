@@ -522,11 +522,33 @@ do_install_library() {
         verify_nix_develop "$dir"
         info "installing dimos[${EXTRAS}] via nix develop..."
         if [[ "$DRY_RUN" == "1" ]]; then dim "[dry-run] nix develop + uv venv + uv pip install"
-        else (cd "$dir" && nix develop --command bash -c "set -euo pipefail; UV_VENV_CLEAR=1 uv venv --python 3.12; source .venv/bin/activate; uv pip install 'dimos[${EXTRAS}]'"); fi
+        else
+            local venv_flag=""
+            if [[ -d "${dir}/.venv" ]]; then
+                warn "existing .venv found in ${dir}/"
+                if prompt_confirm "Replace existing virtual environment?" "no"; then
+                    venv_flag="UV_VENV_CLEAR=1"
+                else
+                    info "keeping existing .venv"
+                    venv_flag="SKIP_VENV=1"
+                fi
+            fi
+            (cd "$dir" && nix develop --command bash -c "set -euo pipefail; [[ \"\${SKIP_VENV:-}\" != 1 ]] && ${venv_flag} uv venv --python 3.12; source .venv/bin/activate; uv pip install 'dimos[${EXTRAS}]'")
+        fi
     else
-        info "creating virtual environment (python 3.12)..."
-        if [[ "$DRY_RUN" == "1" ]]; then dim "[dry-run] UV_VENV_CLEAR=1 uv venv --python 3.12"
-        else (cd "$dir" && UV_VENV_CLEAR=1 uv venv --python 3.12); fi
+        if [[ -d "${dir}/.venv" ]] && [[ "$DRY_RUN" != "1" ]]; then
+            warn "existing .venv found in ${dir}/"
+            if prompt_confirm "Replace existing virtual environment?" "no"; then
+                info "replacing virtual environment..."
+                (cd "$dir" && UV_VENV_CLEAR=1 uv venv --python 3.12)
+            else
+                info "keeping existing .venv — skipping venv creation"
+            fi
+        else
+            info "creating virtual environment (python 3.12)..."
+            if [[ "$DRY_RUN" == "1" ]]; then dim "[dry-run] uv venv --python 3.12"
+            else (cd "$dir" && uv venv --python 3.12); fi
+        fi
         info "installing dimos[${EXTRAS}]..."
         if [[ "$DRY_RUN" == "1" ]]; then dim "[dry-run] uv pip install 'dimos[${EXTRAS}]'"
         else (cd "$dir" && source .venv/bin/activate && uv pip install "dimos[${EXTRAS}]"); fi
