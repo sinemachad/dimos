@@ -38,6 +38,7 @@ NO_NIX="${DIMOS_NO_NIX:-0}"
 SKIP_TESTS="${DIMOS_SKIP_TESTS:-0}"
 HAS_NIX=0
 SETUP_METHOD=""
+INSTALL_DIR=""
 GUM=""
 
 if [[ -t 1 ]] && command -v tput &>/dev/null && [[ $(tput colors 2>/dev/null || echo 0) -ge 8 ]]; then
@@ -558,6 +559,7 @@ prompt_install_dir() {
 do_install_library() {
     local dir="${PROJECT_DIR:-}"
     if [[ -z "$dir" ]]; then dir=$(prompt_install_dir "$PWD" "library"); fi
+    INSTALL_DIR="$dir"
     info "library install → ${dir}"
     run_cmd "mkdir -p '$dir'"
 
@@ -598,11 +600,11 @@ do_install_library() {
         else
             info "creating virtual environment (python 3.12)..."
             if [[ "$DRY_RUN" == "1" ]]; then dim "[dry-run] uv venv --python 3.12"
-            else (cd "$dir" && uv venv --python 3.12); fi
+            else pushd "$dir" >/dev/null && uv venv --python 3.12 && popd >/dev/null; fi
         fi
         info "installing dimos[${EXTRAS}]..."
         if [[ "$DRY_RUN" == "1" ]]; then dim "[dry-run] uv pip install 'dimos[${EXTRAS}]'"
-        else (cd "$dir" && source .venv/bin/activate && uv pip install "dimos[${EXTRAS}]"); fi
+        else pushd "$dir" >/dev/null && source .venv/bin/activate && uv pip install "dimos[${EXTRAS}]" && popd >/dev/null; fi
     fi
     ok "dimos installed in ${dir}"
 }
@@ -610,6 +612,7 @@ do_install_library() {
 do_install_dev() {
     local dir="${PROJECT_DIR:-}"
     if [[ -z "$dir" ]]; then dir=$(prompt_install_dir "$PWD/dimos" "dev"); fi
+    INSTALL_DIR="$dir"
     info "developer install → ${dir}"
     if [[ -d "$dir/.git" ]]; then
         info "existing clone found, pulling latest..."
@@ -669,7 +672,7 @@ configure_system() {
 # ─── verification ─────────────────────────────────────────────────────────────
 verify_install() {
     info "verifying installation..."
-    local dir; [[ "$INSTALL_MODE" == "library" ]] && dir="${PROJECT_DIR:-$HOME/dimos-project}" || dir="${PROJECT_DIR:-$HOME/dimos}"
+    local dir="$INSTALL_DIR"
     if [[ "$DRY_RUN" == "1" ]]; then ok "verification skipped (dry-run)"; return; fi
     local venv_python="${dir}/.venv/bin/python3"
     [[ ! -f "$venv_python" ]] && { warn "venv not found, skipping verification"; return; }
@@ -692,43 +695,52 @@ run_post_install_tests() {
     [[ "$SKIP_TESTS" == "1" ]] && { dim "  skipping tests (--skip-tests)"; return; }
     [[ "$DRY_RUN" == "1" ]] && { dim "[dry-run] would run post-install tests"; return; }
 
-    local dir; [[ "$INSTALL_MODE" == "library" ]] && dir="${PROJECT_DIR:-$HOME/dimos-project}" || dir="${PROJECT_DIR:-$HOME/dimos}"
+    local dir="$INSTALL_DIR"
     local venv="${dir}/.venv/bin/activate"
     [[ ! -f "$venv" ]] && { warn "venv not found, skipping tests"; return; }
+
+    if ! prompt_confirm "Run post-install verification tests?" "yes"; then
+        dim "  skipping tests"
+        return
+    fi
 
     printf "\n"; info "${BOLD}running post-install verification...${RESET}"; printf "\n"
     local failures=0
 
+    # pytest (dev mode only) — uses pyproject.toml markers to run fast suite
     if [[ "$INSTALL_MODE" == "dev" ]]; then
-        info "pytest (fast tests)..."
+        info "running fast test suite (uv run pytest dimos)..."
         local exit_code=0
         if [[ "$USE_NIX" == "1" ]]; then
-            (cd "$dir" && nix develop --command bash -c "source .venv/bin/activate && python -m pytest dimos -x -q --timeout=60 -k 'not slow and not mujoco' 2>&1 | tail -20") || exit_code=$?
+            (cd "$dir" && nix develop --command bash -c "source .venv/bin/activate && uv run pytest dimos 2>&1 | tail -20") || exit_code=$?
         else
-            (cd "$dir" && source "$venv" && uv run pytest dimos -x -q --timeout=60 -k "not slow and not mujoco" 2>&1 | tail -20) || exit_code=$?
+            (cd "$dir" && source "$venv" && uv run pytest dimos 2>&1 | tail -20) || exit_code=$?
         fi
         [[ $exit_code -eq 0 ]] && ok "pytest passed ✓" || { warn "pytest: some tests failed"; ((failures++)) || true; }
     fi
 
-    info "replay verification (unitree-go2, 30s timeout)..."
-    local log; log=$(mktemp /tmp/dimos-replay-XXXXXX.log)
-    local exit_code=0
-    if [[ "$USE_NIX" == "1" ]]; then
-        (cd "$dir" && nix develop --command bash -c "source .venv/bin/activate && timeout 30 dimos --replay run unitree-go2") >"$log" 2>&1 || exit_code=$?
-    else
-        (cd "$dir" && source "$venv" && timeout 30 dimos --replay run unitree-go2) >"$log" 2>&1 || exit_code=$?
-    fi
-
-    if [[ $exit_code -eq 124 ]]; then ok "replay: ran 30s without crash ✓"
-    elif [[ $exit_code -eq 0 ]]; then ok "replay: completed ✓"
-    else
-        if grep -qi "Traceback\|ModuleNotFoundError\|ImportError" "$log" 2>/dev/null; then
-            warn "replay failed (exit ${exit_code})"; tail -5 "$log" | while IFS= read -r l; do dim "    $l"; done; ((failures++)) || true
+    # replay verification — only if unitree extras were installed
+    if [[ "$EXTRAS" == *"unitree"* ]] || [[ "$EXTRAS" == "all" ]]; then
+        info "replay verification (unitree-go2, 30s timeout)..."
+        local log; log=$(mktemp /tmp/dimos-replay-XXXXXX.log)
+        local exit_code=0
+        if [[ "$USE_NIX" == "1" ]]; then
+            (cd "$dir" && nix develop --command bash -c "source .venv/bin/activate && timeout 30 dimos --replay run unitree-go2") >"$log" 2>&1 || exit_code=$?
         else
-            warn "replay exited with code ${exit_code} (may be expected headless)"
+            (cd "$dir" && source "$venv" && timeout 30 dimos --replay run unitree-go2) >"$log" 2>&1 || exit_code=$?
         fi
+
+        if [[ $exit_code -eq 124 ]]; then ok "replay: ran 30s without crash ✓"
+        elif [[ $exit_code -eq 0 ]]; then ok "replay: completed ✓"
+        else
+            if grep -qi "Traceback\|ModuleNotFoundError\|ImportError" "$log" 2>/dev/null; then
+                warn "replay failed (exit ${exit_code})"; tail -5 "$log" | while IFS= read -r l; do dim "    $l"; done; ((failures++)) || true
+            else
+                warn "replay exited with code ${exit_code} (may be expected headless)"
+            fi
+        fi
+        rm -f "$log"
     fi
-    rm -f "$log"
 
     printf "\n"
     [[ $failures -eq 0 ]] && ok "${BOLD}all checks passed${RESET} 🎉" || warn "${failures} check(s) had issues"
@@ -736,7 +748,7 @@ run_post_install_tests() {
 
 # ─── quickstart ───────────────────────────────────────────────────────────────
 print_quickstart() {
-    local dir; [[ "$INSTALL_MODE" == "library" ]] && dir="${PROJECT_DIR:-$HOME/dimos-project}" || dir="${PROJECT_DIR:-$HOME/dimos}"
+    local dir="$INSTALL_DIR"
     printf "\n  %s%s🎉 installation complete!%s\n\n  %sget started:%s\n\n" "$BOLD" "$GREEN" "$RESET" "$BOLD" "$RESET"
 
     if [[ "$USE_NIX" == "1" ]]; then
