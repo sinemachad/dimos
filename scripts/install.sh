@@ -13,6 +13,9 @@
 #
 set -euo pipefail
 
+# Ensure we're in a valid directory (CWD may have been deleted by uninstall)
+cd "$HOME" 2>/dev/null || cd /tmp
+
 # ─── signal handling (must be early so Ctrl+C works everywhere) ────────────────
 trap 'printf "\n"; exit 130' INT
 
@@ -390,7 +393,15 @@ install_nix() {
         HAS_NIX=1; return
     fi
 
-    sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --daemon
+    # Clean stale Nix backup files that block reinstall
+    for rc in /etc/bashrc /etc/bash.bashrc /etc/zshrc; do
+        if [[ -f "${rc}.backup-before-nix" ]]; then
+            sudo mv "${rc}.backup-before-nix" "$rc"
+        fi
+    done
+
+    # Run from /tmp (CWD may not exist) with TTY so nix installer can prompt
+    (cd /tmp && sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --daemon) </dev/tty
 
     [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]] && \
         . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
