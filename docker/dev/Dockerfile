@@ -17,15 +17,18 @@ RUN apt-get update && apt-get install -y \
     net-tools \
     sudo \
     pre-commit \
-    cyclonedds-dev
+    cmake \
+    build-essential
 
-# Set up CycloneDDS compatibility directory structure
-RUN mkdir -p /opt/cyclonedds/lib /opt/cyclonedds/bin /opt/cyclonedds/include && \
-    ln -sf /usr/lib/x86_64-linux-gnu/libddsc.so* /opt/cyclonedds/lib/ && \
-    ln -sf /usr/lib/x86_64-linux-gnu/libcycloneddsidl.so* /opt/cyclonedds/lib/ && \
-    ln -sf /usr/bin/idlc /opt/cyclonedds/bin/ && \
-    ln -sf /usr/bin/ddsperf /opt/cyclonedds/bin/ && \
-    ln -sf /usr/include/dds /opt/cyclonedds/include/
+# Build CycloneDDS 0.10.5 from source (Ubuntu 22.04 apt only has ~0.9.x,
+# but the Python cyclonedds package requires >=0.10.5 headers)
+RUN git clone --branch 0.10.5 --depth 1 https://github.com/eclipse-cyclonedds/cyclonedds.git /tmp/cyclonedds && \
+    mkdir /tmp/cyclonedds/build && \
+    cd /tmp/cyclonedds/build && \
+    cmake -DCMAKE_INSTALL_PREFIX=/opt/cyclonedds .. && \
+    cmake --build . --parallel $(nproc) && \
+    cmake --install . && \
+    rm -rf /tmp/cyclonedds
 
 ENV CYCLONEDDS_HOME=/opt/cyclonedds
 
