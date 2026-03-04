@@ -176,7 +176,7 @@ class G1HighLevelDdsSdk(Module, HighLevelG1Spec):
                 self._stop_timer.daemon = True
                 self._stop_timer.start()
 
-                logger.info(f"Continuous move: vx={vx}, vy={vy}, vyaw={vyaw}")
+                # logger.info(f"Continuous move: vx={vx}, vy={vy}, vyaw={vyaw}")
                 self.loco_client.Move(vx, vy, vyaw, continous_move=True)
 
             return True

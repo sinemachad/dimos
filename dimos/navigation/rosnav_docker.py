@@ -416,9 +416,7 @@ class ROSNav(
         self.goal_active.publish(dimos_pose)
 
     def _on_ros_cmd_vel(self, msg: ROSTwistStamped) -> None:
-        # FIXME: debugging only (testing )
-        # self.cmd_vel.publish(_twist_from_ros(msg.twist))
-        pass
+        self.cmd_vel.publish(_twist_from_ros(msg.twist))
 
     def _on_ros_registered_scan(self, msg: ROSPointCloud2) -> None:
         self.lidar.publish(_pc2_from_ros(msg))
