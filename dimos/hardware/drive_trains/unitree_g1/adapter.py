@@ -139,9 +139,24 @@ class UnitreeG1TwistAdapter:
             self._session = session
             logger.info("Connected to G1")
 
-            # Stand up and activate locomotion
-            if not self._initialize_locomotion():
-                logger.error("Failed to initialize locomotion mode")
+            # Check if robot is freshly booted (FSM 0) — needs manual damp first
+            fsm = self._get_fsm_id()
+            if fsm == 0:
+                logger.warning(
+                    "G1 is in FSM 0 (fresh boot). "
+                    "Please put the robot in DAMP mode manually, then retry. "
+                    "Waiting 10s for damp..."
+                )
+                if not self._wait_for_fsm(1, timeout=30, settle=2):
+                    logger.error("G1 did not enter damp mode (FSM 1). Cannot proceed.")
+                    self.disconnect()
+                    return False
+
+            # Enter lock stand (FSM 4) so the robot is standing and ready
+            logger.info("Entering lock stand (FSM 4) on G1...")
+            session.client.SetFsmId(4)
+            if not self._wait_for_fsm(4):
+                logger.error("G1 failed to reach lock stand (FSM 4)")
                 self.disconnect()
                 return False
 
@@ -283,10 +298,12 @@ class UnitreeG1TwistAdapter:
 
         if enable:
             if not session.locomotion_ready:
-                logger.info("Locomotion not ready, initializing...")
-                if not self._initialize_locomotion():
-                    logger.error("Failed to initialize locomotion")
+                logger.info("Starting G1 locomotion (FSM 200)...")
+                session.client.Start()
+                if not self._wait_for_fsm(200):
+                    logger.error("G1 failed to reach locomotion mode (FSM 200)")
                     return False
+                session.locomotion_ready = True
 
             session.enabled = True
             logger.info("G1 enabled")
@@ -305,38 +322,52 @@ class UnitreeG1TwistAdapter:
     # Internal
     # =========================================================================
 
-    def _initialize_locomotion(self) -> bool:
-        """Initialize locomotion mode.
+    def _get_fsm_id(self) -> int | None:
+        """Query the current FSM ID from the robot. Returns None on failure."""
+        from unitree_sdk2py.g1.loco.g1_loco_api import ROBOT_API_ID_LOCO_GET_FSM_ID
 
-        G1-specific sequence (discovered via hardware testing):
-        1. SetFsmId(4) - Enter lock stand (FSM 4, rigid standing)
-        2. Start() - Activate locomotion (FSM 200)
-        3. Now Move() commands will work
+        session = self._get_session()
+        try:
+            code, data = session.client._Call(ROBOT_API_ID_LOCO_GET_FSM_ID, "{}")
+            if code == 0 and data:
+                # data is like '{"data":4}' — extract the number
+                for token in str(data).split(":"):
+                    token = token.strip().rstrip("}")
+                    if token.lstrip("-").isdigit():
+                        return int(token)
+        except Exception as e:
+            logger.warning(f"Error querying FSM state: {e}")
+        return None
 
-        Note: Damp() is intentionally NOT called here — it causes the
-        robot to collapse and should only be invoked by the user.
+    def _wait_for_fsm(self, target_fsm: int, timeout: float = 10.0, settle: float = 5.0) -> bool:
+        """Poll GetFsmId until the robot reports the target FSM state.
+
+        Args:
+            target_fsm: Expected FSM ID (e.g. 4 for lock stand, 200 for locomotion).
+            timeout: Maximum seconds to wait before giving up.
+            settle: Seconds to wait after reaching target state, letting the robot settle.
 
         Returns:
-            True if successful, False otherwise
+            True if the target state was reached, False on timeout.
         """
+        from unitree_sdk2py.g1.loco.g1_loco_api import ROBOT_API_ID_LOCO_GET_FSM_ID
+
         session = self._get_session()
+        deadline = time.time() + timeout
 
-        try:
-            logger.info("Entering lock stand (FSM 4) on G1...")
-            session.client.SetFsmId(4)
-            time.sleep(2)  # Wait for lock stand to settle
+        while time.time() < deadline:
+            try:
+                code, data = session.client._Call(ROBOT_API_ID_LOCO_GET_FSM_ID, "{}")
+                if code == 0 and str(target_fsm) in str(data):
+                    logger.info(f"G1 reached FSM {target_fsm}, settling for {settle}s...")
+                    time.sleep(settle)
+                    return True
+            except Exception as e:
+                logger.warning(f"Error polling FSM state: {e}")
+            time.sleep(1)
 
-            logger.info("Starting G1 locomotion (FSM 200)...")
-            session.client.Start()
-            time.sleep(2)  # Wait for locomotion to activate
-
-            session.locomotion_ready = True
-            logger.info("G1 locomotion ready")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error initializing locomotion: {e}")
-            return False
+        logger.error(f"Timed out waiting for G1 FSM {target_fsm}")
+        return False
 
     def _send_velocity(self, vx: float, vy: float, wz: float) -> bool:
         """Send raw velocity to G1 via LocoClient.Move().

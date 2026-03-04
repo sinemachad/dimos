@@ -32,8 +32,6 @@ import threading
 import time
 from typing import TYPE_CHECKING
 
-from unitree_webrtc_connect.constants import RTC_TOPIC, SPORT_CMD
-
 from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
@@ -45,13 +43,14 @@ if TYPE_CHECKING:
 
 logger = setup_logger()
 
-# G1 locomotion modes (api_id 7101, topic "rt/api/sport/request")
-_G1_WALK_MODE = 500
-_G1_SPORT_API_ID = 7101
+# G1 LocoClient API IDs and FSM states
+_G1_SET_FSM_ID = 7101  # SetFsmId — also used for walk mode with data=500
 _G1_SPORT_TOPIC = "rt/api/sport/request"
+_FSM_LOCK_STAND = 4
+_FSM_LOCOMOTION = 200
 
 
-class UnitreeG1WebRTCAdapter:
+class UnitreeG1WebRTCTwistAdapter:
     """TwistBaseAdapter implementation for Unitree G1 humanoid over WebRTC.
 
     Communicates with G1 via WebRTC using the UnitreeWebRTCConnection driver.
@@ -114,6 +113,16 @@ class UnitreeG1WebRTCAdapter:
 
             self._conn = conn
             logger.info("Connected to G1 via WebRTC")
+
+            # Enter lock stand (FSM 4) so the robot is standing and ready
+            logger.info("G1 WebRTC: entering lock stand (FSM 4)...")
+            conn.publish_request(
+                _G1_SPORT_TOPIC,
+                {"api_id": _G1_SET_FSM_ID, "parameter": {"data": _FSM_LOCK_STAND}},
+            )
+            time.sleep(10)  # Wait for robot to finish standing
+            logger.info("G1 WebRTC: lock stand ready")
+
             return True
 
         except Exception as e:
@@ -232,26 +241,15 @@ class UnitreeG1WebRTCAdapter:
 
         if enable:
             try:
-                logger.info("Standing up G1 via WebRTC...")
-                conn.standup()
-                time.sleep(3)  # Wait for standup to complete
-
-                if self._locomotion_mode == "walk":
-                    logger.info("Activating G1 WalkMode locomotion...")
-                    conn.publish_request(
-                        _G1_SPORT_TOPIC,
-                        {"api_id": _G1_SPORT_API_ID, "parameter": {"data": _G1_WALK_MODE}},
-                    )
-                else:
-                    logger.info("Activating BalanceStand locomotion mode...")
-                    conn.publish_request(
-                        RTC_TOPIC["SPORT_MOD"],
-                        {"api_id": SPORT_CMD["BalanceStand"]},
-                    )
-                time.sleep(2)  # Wait for locomotion mode to activate
+                logger.info("G1 WebRTC: starting locomotion (FSM 200)...")
+                conn.publish_request(
+                    _G1_SPORT_TOPIC,
+                    {"api_id": _G1_SET_FSM_ID, "parameter": {"data": _FSM_LOCOMOTION}},
+                )
+                time.sleep(3)  # Wait for locomotion to activate
 
                 self._enabled = True
-                logger.info(f"G1 WebRTC enabled (locomotion_mode={self._locomotion_mode})")
+                logger.info("G1 WebRTC: locomotion ready")
                 return True
             except Exception as e:
                 logger.error(f"Failed to enable G1 via WebRTC: {e}")
@@ -311,7 +309,7 @@ class UnitreeG1WebRTCAdapter:
 
 def register(registry: TwistBaseAdapterRegistry) -> None:
     """Register this adapter with the registry."""
-    registry.register("unitree_g1_webrtc", UnitreeG1WebRTCAdapter)
+    registry.register("unitree_g1_webrtc", UnitreeG1WebRTCTwistAdapter)
 
 
-__all__ = ["UnitreeG1WebRTCAdapter"]
+__all__ = ["UnitreeG1WebRTCTwistAdapter"]
