@@ -34,10 +34,10 @@ class StreamBase(ABC, Generic[T]):
 
 ## Source type determines mode
 
-| Source | `live=False` (default) | `live=True` |
-|--------|----------------------|-------------|
-| `StreamBase` | backfill all existing + subscribe to `.appended` | subscribe to `.appended` only |
-| `ObservationSet` | batch process the set | N/A (ignored) |
+| Source           | `live=False` (default)                           | `live=True`                   |
+|------------------|--------------------------------------------------|-------------------------------|
+| `StreamBase`     | backfill all existing + subscribe to `.appended` | subscribe to `.appended` only |
+| `ObservationSet` | batch process the set                            | N/A (ignored)                 |
 
 ## Transform function contract
 

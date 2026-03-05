@@ -111,10 +111,22 @@ class StreamBase(ABC, Generic[T]):
     @property
     def appended(self) -> Observable[ObservationRow]: ...  # .data pre-populated
 
+    # Transform (see transform.md for details)
+    def transform(self,
+                  source: StreamBase | ObservationSet,
+                  fn: Callable[[Any], T | list[T] | None],
+                  *,
+                  live: bool = False) -> Self:
+        """Process source data, store results with lineage.
+        StreamBase source: backfill + subscribe (live=True skips backfill).
+        ObservationSet source: batch only."""
+        ...
+
     # Read
     def query(self) -> Query[T]: ...
     def load(self, row: ObservationRow) -> T: ...
     def load_many(self, rows: list[ObservationRow], *, batch_size=32) -> list[T]: ...
+    def iter_meta(self, *, page_size=128) -> Iterator[list[ObservationRow]]: ...
     def count(self) -> int: ...
 
 class BlobStream(StreamBase[T]):
@@ -124,11 +136,8 @@ class EmbeddingStream(StreamBase[T]):
     """Stream with vector index. No payload table — the vector IS the data."""
     model: EmbeddingModel
 
-    def attach(self, parent: StreamBase) -> Self:
-        """Sets lineage parent + subscribes to parent.appended to auto-embed."""
-        # parent.appended.pipe(
-        #     ops.map(lambda row: self._embed_and_store(row)),
-        # ).subscribe()
+    def transform(self, source, fn=None, *, live=False) -> Self:
+        """If fn is None, uses model.embed implicitly."""
         ...
 
     def vector(self, row: ObservationRow) -> list[float] | None: ...
@@ -322,11 +331,11 @@ All virtual table rowids match `_meta.rowid` directly.
 
 ## Phase 3: Later (not in first PR)
 
-- `derive()` with Transform protocol
 - `CompositeBacking` (union/intersection/difference)
 - `Correlator` / `s.correlate()`
 - `retention` enforcement / cleanup
 - Full introspection (stats, spatial_bounds)
+- Query objects (`query_objects.md`) — composable criteria + soft scoring
 
 ## Design Decisions
 
@@ -337,6 +346,7 @@ All virtual table rowids match `_meta.rowid` directly.
 - **Unlocalized observations**: rows without pose excluded from `filter_near()` by default. `include_unlocalized=True` to include them.
 - **Stream hierarchy**: `StreamBase` (ABC) → `BlobStream`, `EmbeddingStream`, `TextStream`. Indexing is determined by stream type, not config.
 - **Lineage**: parent stream defined at stream level (in `_streams` registry). Per-row `parent_id` links to specific row in parent.
+- **Transform**: `.transform(source, fn)` on any stream — unified API for batch (ObservationSet) and live (StreamBase) derived streams. Uses `appended` observable for reactive pipeline. See `transform.md`.
 
 ### SQLite-specific
 
