@@ -94,19 +94,11 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         if not self._client:
             raise ValueError("Not started")
 
-        # Separate docker modules from regular modules
-        docker_specs: list[tuple[type[ModuleT], tuple[Any, ...], dict[str, Any]]] = []
-        worker_specs: list[tuple[type[ModuleT], tuple[Any, ...], dict[str, Any]]] = []
-        spec_indices: list[tuple[str, int]] = []  # ("docker"|"worker", index_in_sublist)
-
-        for module_class, args, kwargs in module_specs:
-            if is_docker_module(module_class):
-                docker_specs.append(spec)
-            else:
-                worker_specs.append(spec)
+        docker_specs = [spec for spec in module_specs if is_docker_module(spec[0])]
+        worker_specs = [spec for spec in module_specs if not is_docker_module(spec[0])]
 
         worker_results = self._client.deploy_parallel(worker_specs) if worker_specs else []
-        docker_results = []
+        docker_results: list[Any] = []
         if docker_specs:
             with ThreadPoolExecutor(max_workers=len(docker_specs)) as executor:
                 docker_results = list(
@@ -114,12 +106,13 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
                         lambda spec: DockerModule(spec[0], *spec[1], **spec[2]), docker_specs
                     )
                 )
-        specs = worker_specs+docker_specs
-        results = worker_results+docker_results
-        
-        for (module_class, _, _), module in zip(specs, results, strict=True):
+
+        results = worker_results + docker_results
+        for (module_class, _, _), module in zip(
+            worker_specs + docker_specs, results, strict=True
+        ):
             self._deployed_modules[module_class] = module
-        return results  # type: ignore[return-value]
+        return results
 
     def start_all_modules(self) -> None:
         modules = list(self._deployed_modules.values())
