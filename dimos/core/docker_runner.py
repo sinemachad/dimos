@@ -196,12 +196,12 @@ class DockerModule(ModuleProxy):
     config : DockerModuleConfig
 
     def __init__(self, module_class: type[Module], *args: Any, **kwargs: Any) -> None:
-        # Config
+        from dimos.core.docker_build import build_image, image_exists
+
         config_class = getattr(module_class, "default_config", DockerModuleConfig)
         assert issubclass(config_class, DockerModuleConfig)
         config = config_class(**kwargs)
-        
-        # Module info
+
         self._module_class = module_class
         self.config = config
         self._args = args
@@ -212,13 +212,43 @@ class DockerModule(ModuleProxy):
             module_class, config
         )
 
-
         self.rpc = LCMRPC()
         self.rpcs = set(module_class.rpcs.keys())  # type: ignore[attr-defined]
         self.rpc_calls: list[str] = getattr(module_class, "rpc_calls", [])
         self._unsub_fns: list[Callable[[], None]] = []
         self._bound_rpc_calls: dict[str, RpcCall] = {}
-        self._deferred_transports: dict[str, str] = {}  # stream_name -> topic
+
+        # Build image, launch container, wait for RPC server — mirrors worker Module.__init__
+        try:
+            if not image_exists(config):
+                logger.info(f"Building {config.docker_image}")
+                build_image(config)
+
+            reconnect = False
+            if _is_container_running(config, self._container_name):
+                reconnect = _prompt_reconnect(self._container_name)
+                if not reconnect:
+                    _run([_docker_bin(config), "stop", self._container_name], timeout=DOCKER_STOP_TIMEOUT)
+            if not reconnect:
+                _remove_container(config, self._container_name)
+
+            cmd = self._build_docker_run_command()
+            logger.info(f"Starting docker container: {self._container_name}")
+            r = _run(cmd, timeout=DOCKER_RUN_TIMEOUT)
+            if r.returncode != 0:
+                raise RuntimeError(
+                    f"Failed to start container.\nSTDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
+                )
+
+            self.rpc.start()
+            self._running = True
+            # docker run -d returns before Module.__init__ finishes in the container,
+            # so we poll until the RPC server is reachable before returning.
+            self._wait_for_rpc()
+        except Exception:
+            with suppress(Exception):
+                self.stop()
+            raise
 
     @staticmethod
     def _default_container_name(module_class: type[Module], config: DockerModuleConfig) -> str:
@@ -236,6 +266,11 @@ class DockerModule(ModuleProxy):
     def set_rpc_method(self, method: str, callable: RpcCall) -> None:
         callable.set_rpc(self.rpc)
         self._bound_rpc_calls[method] = callable
+        # Forward to container — Module.set_rpc_method unpickles the RpcCall
+        # and wires it with the container's own LCMRPC
+        self.rpc.call_sync(
+            f"{self.remote_name}/set_rpc_method", ([method, callable], {})
+        )
 
     def get_rpc_calls(self, *methods: str) -> RpcCall | tuple[RpcCall, ...]:
         missing = set(methods) - self._bound_rpc_calls.keys()
@@ -245,38 +280,8 @@ class DockerModule(ModuleProxy):
         return calls[0] if len(calls) == 1 else calls
 
     def start(self) -> None:
-        """Invoke the remote module's start() RPC.
-
-        Called after stream transports are wired so the module can subscribe
-        to its streams with valid transports.
-        """
-        from dimos.core.docker_build import build_image, image_exists
-
-        if not image_exists(self.config):
-            logger.info(f"Building {self.config.docker_image}")
-            build_image(self.config)
+        """Invoke the remote module's start() RPC."""
         try:
-
-            cfg = self.config
-            reconnect = False
-            if _is_container_running(cfg, self._container_name):
-                reconnect = _prompt_reconnect(self._container_name)
-                if not reconnect:
-                    _run([_docker_bin(self.config), "stop", self._container_name], timeout=DOCKER_STOP_TIMEOUT)
-            if not reconnect:
-                _remove_container(cfg, self._container_name)
-            
-            cmd = self._build_docker_run_command()
-            logger.info(f"Starting docker container: {self._container_name}")
-            r = _run(cmd, timeout=DOCKER_RUN_TIMEOUT)
-            if r.returncode != 0:
-                raise RuntimeError(
-                    f"Failed to start container.\nSTDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
-                )
-
-            self.rpc.start()
-            self._running = True
-            self._configure_streams(self._deferred_transports)
             self.rpc.call_sync(f"{self.remote_name}/start", ([], {}))
         except Exception:
             with suppress(Exception):
@@ -285,10 +290,11 @@ class DockerModule(ModuleProxy):
 
     def stop(self) -> None:
         """Gracefully stop the Docker container and clean up resources."""
-        # Signal remote module, stop RPC, unsubscribe handlers (ignore failures)
+        if not self._running:
+            return
+
         with suppress(Exception):
-            if self._running:
-                self.rpc.call_nowait(f"{self.remote_name}/stop", ([], {}))
+            self.rpc.call_nowait(f"{self.remote_name}/stop", ([], {}))
         with suppress(Exception):
             self.rpc.stop()
         for unsub in self._unsub_fns:
@@ -296,7 +302,6 @@ class DockerModule(ModuleProxy):
                 unsub()
         self._unsub_fns.clear()
 
-        # Stop and remove container
         _run([_docker_bin(self.config), "stop", self._container_name], timeout=DOCKER_STOP_TIMEOUT)
         _remove_container(self.config, self._container_name)
         self._running = False
@@ -315,14 +320,11 @@ class DockerModule(ModuleProxy):
         return _tail_logs(self.config, self._container_name, n=n)
 
     def set_transport(self, stream_name: str, transport: Any) -> bool:
-        """Defer stream transport config until start() when the container is running."""
-        topic = getattr(transport, "topic", None)
-        if topic is None:
-            return False
-        if hasattr(topic, "topic"):
-            topic = topic.topic
-        self._deferred_transports[stream_name] = str(topic)
-        return True
+        """Forward to the container's Module.set_transport RPC."""
+        result, _ = self.rpc.call_sync(
+            f"{self.remote_name}/set_transport", ([stream_name, transport], {})
+        )
+        return bool(result)
 
     def __getattr__(self, name: str) -> Any:
         if name in self.rpcs:
@@ -480,12 +482,8 @@ class DockerModule(ModuleProxy):
         # DimOS base image entrypoint already runs "dimos.core.docker_runner run"
         return ["--payload", json.dumps(payload, separators=(",", ":"))]
 
-    def _configure_streams(self, streams: dict[str, str]) -> None:
-        """Poll configure_streams RPC until the container's RPC server is up, then wire streams.
-
-        Also serves as the liveness gate — the first successful call proves the
-        container is ready to accept RPCs.
-        """
+    def _wait_for_rpc(self) -> None:
+        """Poll until the container's RPC server is reachable."""
         cfg = self.config
         start_time = time.time()
 
@@ -498,8 +496,8 @@ class DockerModule(ModuleProxy):
 
             try:
                 self.rpc.call_sync(
-                    f"{self.remote_name}/configure_streams",
-                    ([streams], {}),
+                    f"{self.remote_name}/get_rpc_method_names",
+                    ([], {}),
                     rpc_timeout=RPC_READY_TIMEOUT,
                 )
                 elapsed = time.time() - start_time
