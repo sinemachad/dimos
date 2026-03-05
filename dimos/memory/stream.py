@@ -221,6 +221,12 @@ class Stream(Generic[T]):
     def project_to(self, target: Stream[Any]) -> Stream[Any]:
         raise NotImplementedError("project_to requires a stored stream with lineage")
 
+    # ── Iteration ─────────────────────────────────────────────────────
+
+    def __iter__(self) -> Iterator[Observation]:
+        for page in self.fetch_pages():
+            yield from page
+
     # ── Terminals ─────────────────────────────────────────────────────
 
     def fetch(self) -> list[Observation]:

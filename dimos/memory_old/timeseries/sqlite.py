@@ -19,7 +19,7 @@ import pickle
 import re
 import sqlite3
 
-from dimos.memory.timeseries.base import T, TimeSeriesStore
+from dimos.memory_old.timeseries.base import T, TimeSeriesStore
 from dimos.utils.data import get_data, get_data_dir
 
 # Valid SQL identifier: alphanumeric and underscores, not starting with digit

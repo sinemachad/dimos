@@ -20,11 +20,11 @@ import uuid
 
 import pytest
 
-from dimos.memory.timeseries.base import TimeSeriesStore
-from dimos.memory.timeseries.inmemory import InMemoryStore
-from dimos.memory.timeseries.legacy import LegacyPickleStore
-from dimos.memory.timeseries.pickledir import PickleDirStore
-from dimos.memory.timeseries.sqlite import SqliteTSStore
+from dimos.memory_old.timeseries.base import TimeSeriesStore
+from dimos.memory_old.timeseries.inmemory import InMemoryStore
+from dimos.memory_old.timeseries.legacy import LegacyPickleStore
+from dimos.memory_old.timeseries.pickledir import PickleDirStore
+from dimos.memory_old.timeseries.sqlite import SqliteTSStore
 from dimos.types.timestamped import Timestamped
 
 
@@ -81,7 +81,7 @@ _postgres_tables: list[str] = []
 try:
     import psycopg2
 
-    from dimos.memory.timeseries.postgres import PostgresStore
+    from dimos.memory_old.timeseries.postgres import PostgresStore
 
     # Test connection
     _test_conn = psycopg2.connect(dbname="dimensional")

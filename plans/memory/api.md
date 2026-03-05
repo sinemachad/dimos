@@ -450,6 +450,10 @@ class Session:
     def text_stream(self, name: str, payload_type: type | None = None, *,
                     tokenizer: str = "unicode61",
                     pose_provider: PoseProvider | None = None) -> TextStream: ...
+    def embedding_stream(self, name: str, payload_type: type | None = None, *,
+                         vec_dimensions: int | None = None,
+                         pose_provider: PoseProvider | None = None,
+                         parent_table: str | None = None) -> EmbeddingStream: ...
     def materialize_transform(self, name: str, source: Stream,
                               transformer: Transformer,
                               *, live: bool = False,
@@ -466,27 +470,146 @@ class Store:
 
 A `Stream` can be backed by different things — the user never sees this:
 
-- **DB table** — from `session.stream()`. Has `_meta`, `_payload`, indexes.
+- **DB tables** — from `session.stream()`. Metadata + payload + indexes.
 - **Predicate** — from `.after()`, `.near()`, etc. Lazy SQL WHERE.
 - **Transform** — from `.transform(t)`. Source stream + Transformer.
 
 The impl decides how to execute based on the backing chain.
 
+## SQLite Schema
+
+Each stream `{name}` creates these tables:
+
+```sql
+-- Metadata table (compact rows, fast scans)
+CREATE TABLE {name} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL,
+    pose_x REAL,           -- position
+    pose_y REAL,
+    pose_z REAL,
+    pose_qx REAL,          -- orientation quaternion (stored, not indexed)
+    pose_qy REAL,
+    pose_qz REAL,
+    pose_qw REAL,
+    tags TEXT DEFAULT '{}',
+    parent_id INTEGER       -- lineage: source observation id
+);
+CREATE INDEX idx_{name}_ts ON {name}(ts);
+
+-- Payload table (blobs, loaded on demand)
+CREATE TABLE {name}_payload (
+    id INTEGER PRIMARY KEY,
+    data BLOB
+);
+
+-- R*Tree spatial index (position only)
+CREATE VIRTUAL TABLE {name}_rtree USING rtree(
+    id,
+    min_x, max_x,
+    min_y, max_y,
+    min_z, max_z
+);
+```
+
+**Optional per stream kind:**
+
+```sql
+-- TextStream: FTS5 full-text index
+CREATE VIRTUAL TABLE {name}_fts USING fts5(content, tokenize='unicode61');
+
+-- EmbeddingStream: vec0 vector index
+CREATE VIRTUAL TABLE {name}_vec USING vec0(embedding float[{dim}]);
+```
+
+### Key design decisions
+
+- **Separate payload table** — metadata queries (`fetch`, `count`, `near`, filters) never touch blob data. Payload is loaded lazily via `obs.data`.
+- **Decomposed pose columns** — enables R*Tree spatial index for `.near()` queries. Orientation stored for reconstruction but not spatially indexed.
+- **R*Tree for spatial queries** — `.near(pose, radius)` compiles to an R*Tree range query (bounding box at ±radius), not post-query Python filtering.
+
+### Lazy payload loading
+
+`fetch()` returns `Observation` with lazy `.data`:
+- Metadata query: `SELECT id, ts, pose_x, ..., tags FROM {name} WHERE ...`
+- `_data` stays `_UNSET`, `_data_loader` is set to: `SELECT data FROM {name}_payload WHERE id = ?`
+- Only `obs.data` access triggers the blob read + codec decode
+
+This means iterating metadata (`obs.ts`, `obs.pose`, `obs.tags`) is cheap.
+
+### NearFilter SQL compilation
+
+```python
+# .near(pose, 5.0) compiles to:
+# JOIN {name}_rtree AS r ON r.id = {name}.id
+# WHERE r.min_x >= pose.x - 5.0 AND r.max_x <= pose.x + 5.0
+#   AND r.min_y >= pose.y - 5.0 AND r.max_y <= pose.y + 5.0
+#   AND r.min_z >= pose.z - 5.0 AND r.max_z <= pose.z + 5.0
+```
+
+For exact distance (not just bounding box), a post-filter computes Euclidean distance on the R*Tree candidates.
+
+## Serialization (Codec)
+
+Each stream has a `Codec[T]` that handles payload encode/decode. Auto-selected from `payload_type`.
+
+```python
+class Codec(Protocol[T]):
+    def encode(self, value: T) -> bytes: ...
+    def decode(self, data: bytes) -> T: ...
+
+class LcmCodec(Codec[DimosMsg]):
+    """For DimosMsg types — uses lcm_encode/lcm_decode."""
+    def __init__(self, msg_type: type[DimosMsg]) -> None: ...
+
+class PickleCodec(Codec[Any]):
+    """Fallback for arbitrary Python objects."""
+
+def codec_for_type(payload_type: type[T] | None) -> Codec[T]:
+    """Auto-select codec based on payload type."""
+    if payload_type is not None and issubclass(payload_type, DimosMsg):
+        return LcmCodec(payload_type)
+    return PickleCodec()
+```
+
+Lives in `dimos.memory.codec`. Detection uses `dimos.msgs.protocol.DimosMsg` (`runtime_checkable`).
+
+Transparent to the user — just pass `payload_type` to `session.stream()`:
+```python
+images = session.stream("images", Image)    # auto LCM codec
+numbers = session.stream("numbers", int)    # auto pickle codec
+```
+
+Tags are JSON. Poses are decomposed into columns (not serialized).
+
+### Stream metadata (`_streams` table)
+
+```
+name           TEXT PRIMARY KEY
+payload_module TEXT    -- fully qualified, e.g. "dimos.msgs.sensor_msgs.Image.Image"
+stream_kind    TEXT    -- "stream" | "text" | "embedding"
+parent_stream  TEXT    -- parent stream name (lineage for join())
+embedding_dim  INTEGER -- vec0 dimension (embedding streams only)
+```
+
+On restart, `session.stream("images")` (no `payload_type`) resolves the class from `payload_module` via `importlib`, then selects the codec automatically. `embedding_dim` allows recreating the vec0 table without needing to see the first embedding again.
+
 ## Implementation Notes
 
 - **No ORM** — raw `sqlite3` with direct SQL. The `Stream` filter chain *is* the query builder.
 - **Session threading** — streams created by `session.stream()` get `_session` set. `TransformStream` inherits it from its source. `store()` also accepts an explicit `session=` fallback.
-- **Serialization** — payloads are `pickle`, poses are `pickle`, tags are JSON.
-- **Near filter** — compiled as no-op SQL (`1=1`), filtered post-query in Python via pose distance.
 
 ## Resolved Questions
 
 1. **`.append()` on non-stored streams?** → `TypeError` (requires backend).
 2. **Multiple `.store()` calls?** → Idempotent — returns existing stream if already stored.
 3. ~~**Memory pressure from in-memory transforms?**~~ → Solved via `fetch_pages`.
+4. **Pose storage** → Decomposed columns + R*Tree index (not binary blob).
+5. **Payload loading** → Lazy via separate `{name}_payload` table.
+6. **`__iter__`** → `for page in self.fetch_pages(): yield from page` — lazy, memory-efficient iteration.
 
 ## Open Questions
 
 1. **`project_to` / lineage** — `parent_id` column exists but not yet wired.
 2. **Incremental transforms** — re-running a stored transform should resume from last processed item.
-3. **`__iter__`** — spec shows `Stream.__iter__` but not yet implemented.
+3. **4D indexing** — should R*Tree include time as a 4th dimension? See `query_objects.md` for the Criterion/Score direction.

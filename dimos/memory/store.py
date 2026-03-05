@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .stream import Stream, TextStream
+    from .stream import EmbeddingStream, Stream, TextStream
     from .transformer import Transformer
     from .types import PoseProvider, StreamInfo
 
@@ -46,6 +46,18 @@ class Session(ABC):
         pose_provider: PoseProvider | None = None,
     ) -> TextStream[Any]:
         """Get or create a text stream with FTS index."""
+
+    @abstractmethod
+    def embedding_stream(
+        self,
+        name: str,
+        payload_type: type | None = None,
+        *,
+        vec_dimensions: int | None = None,
+        pose_provider: PoseProvider | None = None,
+        parent_table: str | None = None,
+    ) -> EmbeddingStream[Any]:
+        """Get or create an embedding stream with vec0 index."""
 
     @abstractmethod
     def list_streams(self) -> list[StreamInfo]: ...
