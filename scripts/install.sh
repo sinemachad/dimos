@@ -474,13 +474,15 @@ prompt_setup_method() {
 
 verify_nix_develop() {
     local dir="$1"
-    info "verifying nix develop environment..."
+    info "verifying nix develop environment (first run downloads dependencies, may take a few minutes)..."
     if [[ "$DRY_RUN" == "1" ]]; then ok "nix develop verification skipped (dry-run)"; return; fi
-    local nix_check
-    nix_check=$(cd "$dir" && nix develop --command bash -c '
+    local tmpf; tmpf=$(mktemp)
+    # Run with live output so user sees download/build progress
+    (cd "$dir" && nix develop --command bash -c '
         echo "python3=$(which python3 2>/dev/null || echo MISSING)"
         echo "gcc=$(which gcc 2>/dev/null || echo MISSING)"
-    ' 2>&1) || true
+    ' >"$tmpf") || true
+    local nix_check; nix_check=$(<"$tmpf"); rm -f "$tmpf"
     echo "$nix_check" | grep -q "python3=MISSING" && warn "nix develop: python3 not found" || ok "nix develop: python3 available"
     echo "$nix_check" | grep -q "gcc=MISSING" && warn "nix develop: gcc not found" || ok "nix develop: gcc available"
 }
