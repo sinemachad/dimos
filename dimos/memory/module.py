@@ -70,7 +70,8 @@ class MemoryModule(Module[MemoryModuleConfig]):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._stores: list[SqliteStore] = []
+        self._store: SqliteStore | None = None
+        self._sessions: list[Session] = []
         self._session: Session | None = None
         self._images: Stream[Image] | None = None
         self._pointclouds: Stream[PointCloud2] | None = None
@@ -79,10 +80,11 @@ class MemoryModule(Module[MemoryModuleConfig]):
     # ── Lifecycle ─────────────────────────────────────────────────────
 
     def _open_session(self) -> Session:
-        """Open a new store+session (own connection) for the same DB file."""
-        store = SqliteStore(self.config.db_path)
-        self._stores.append(store)
-        return store.session()
+        """Open a new session (own connection) from the shared store."""
+        assert self._store is not None
+        session = self._store.session()
+        self._sessions.append(session)
+        return session
 
     @rpc
     def start(self) -> None:
@@ -92,13 +94,13 @@ class MemoryModule(Module[MemoryModuleConfig]):
 
         cv2.setNumThreads(1)
 
+        self._store = SqliteStore(self.config.db_path)
+
         pose_fn = lambda: self.tf.get_pose(  # noqa: E731
             self.config.world_frame, self.config.robot_frame
         )
 
-        # Each stream gets its own connection so rx callback threads
-        # don't share a single sqlite3.Connection (which can't serialize
-        # concurrent transactions internally).
+        # Each session opens its own connection (WAL mode allows concurrent writes).
 
         # Image stream (best-sharpness per window, no rx windowing overhead)
         img_session = self._open_session()
@@ -153,9 +155,12 @@ class MemoryModule(Module[MemoryModuleConfig]):
             self._images.append(self._img_best, ts=self._img_best.ts)
             self._img_best = None
         self._session = None
-        for store in self._stores:
-            store.close()
-        self._stores.clear()
+        for session in self._sessions:
+            session.close()
+        self._sessions.clear()
+        if self._store is not None:
+            self._store.close()
+            self._store = None
         super().stop()
 
     # ── Callbacks ─────────────────────────────────────────────────────

@@ -938,6 +938,7 @@ class SqliteSession(Session):
             if s._backend is not None:
                 s._backend.appended_subject.on_completed()
         self._streams.clear()
+        self._conn.close()
 
     # ── Internal helpers ──────────────────────────────────────────────
 
@@ -1009,34 +1010,37 @@ class SqliteSession(Session):
 
 
 class SqliteStore(Store):
-    """SQLite-backed memory store.
+    """SQLite-backed memory store (lightweight factory).
 
-    Note: all sessions returned by :meth:`session` share the same underlying
-    ``sqlite3.Connection``.  For concurrent write access from multiple threads,
-    open separate ``SqliteStore`` instances (one per thread) against the same
-    DB path — WAL mode allows this safely.  See ``MemoryModule._open_session``
-    for an example.
+    Each :meth:`session` call opens a new ``sqlite3.Connection`` with WAL mode
+    and extensions loaded.  Sessions are safe to use from different threads.
     """
 
     def __init__(self, path: str) -> None:
         self._path = path
-        self._conn = sqlite3.connect(path, check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._load_extensions()
+        self._closed = False
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._path, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        self._load_extensions(conn)
+        return conn
 
     def session(self) -> SqliteSession:
-        return SqliteSession(self._conn)
+        if self._closed:
+            raise RuntimeError("Store is closed")
+        return SqliteSession(self._connect())
 
-    def _load_extensions(self) -> None:
+    def _load_extensions(self, conn: sqlite3.Connection) -> None:
         try:
             import sqlite_vec
 
-            self._conn.enable_load_extension(True)
-            sqlite_vec.load(self._conn)
-            self._conn.enable_load_extension(False)
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
         except ImportError:
             pass
 
     def close(self) -> None:
-        self._conn.close()
+        self._closed = True
