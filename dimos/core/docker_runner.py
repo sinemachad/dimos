@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 logger = setup_logger()
 
 DOCKER_RUN_TIMEOUT = 120  #     Timeout for `docker run` command execution
-DOCKER_PULL_TIMEOUT = 600  #     Timeout for `docker pull` (large images over slow connections)
+DOCKER_PULL_TIMEOUT_DEFAULT = 600  # Default timeout for `docker pull`
 DOCKER_CMD_TIMEOUT = 20  #       Timeout for quick Docker commands (inspect, rm, logs)
 DOCKER_STATUS_TIMEOUT = 10  #    Timeout for container status checks
 DOCKER_STOP_TIMEOUT = 30  #      Timeout for `docker stop` command (graceful shutdown)
@@ -95,7 +95,8 @@ class DockerModuleConfig(ModuleConfig):
     docker_command: list[str] | None = None
     docker_extra_args: list[str] = field(default_factory=list)
 
-    # Startup readiness
+    # Timeouts
+    docker_pull_timeout: float = DOCKER_PULL_TIMEOUT_DEFAULT
     docker_startup_timeout: float = 120.0
     docker_poll_interval: float = 1.0
 
@@ -214,7 +215,7 @@ class DockerModule(ModuleProxyProtocol):
                     logger.info(f"Pulling {config.docker_image}")
                     r = _run(
                         [_docker_bin(config), "pull", config.docker_image],
-                        timeout=DOCKER_PULL_TIMEOUT,
+                        timeout=config.docker_pull_timeout,
                     )
                     if r.returncode != 0:
                         raise RuntimeError(
