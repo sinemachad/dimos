@@ -60,6 +60,8 @@ class Go2ConnectionProtocol(Protocol):
     def move(self, twist: Twist, duration: float = 0.0) -> bool: ...
     def standup(self) -> bool: ...
     def liedown(self) -> bool: ...
+    def balance_stand(self) -> None: ...
+    def disable_obstacle_avoidance(self) -> None: ...
     def publish_request(self, topic: str, data: dict) -> dict: ...  # type: ignore[type-arg]
 
 
@@ -79,6 +81,20 @@ def _camera_info_static() -> CameraInfo:
         binning_x=0,
         binning_y=0,
     )
+
+
+def make_connection(ip: str, cfg: GlobalConfig) -> Go2ConnectionProtocol:
+    """Create a Go2 connection backend based on IP and config."""
+    connection_type = cfg.unitree_connection_type
+
+    if ip in ("fake", "mock", "replay") or connection_type == "replay":
+        return ReplayConnection()
+    elif ip == "mujoco" or connection_type == "mujoco":
+        from dimos.robot.unitree.mujoco_connection import MujocoConnection
+
+        return MujocoConnection(cfg)
+    else:
+        return UnitreeWebRTCConnection(ip)
 
 
 class ReplayConnection(UnitreeWebRTCConnection):
@@ -107,6 +123,12 @@ class ReplayConnection(UnitreeWebRTCConnection):
 
     def liedown(self) -> bool:
         return True
+
+    def balance_stand(self) -> None:
+        pass
+
+    def disable_obstacle_avoidance(self) -> None:
+        pass
 
     @simple_mcache
     def lidar_stream(self):  # type: ignore[no-untyped-def]
@@ -181,18 +203,8 @@ class GO2Connection(Module, spec.Camera, spec.Pointcloud):
         self._global_config = cfg
 
         ip = ip if ip is not None else self._global_config.robot_ip
-
-        connection_type = self._global_config.unitree_connection_type
-
-        if ip in ["fake", "mock", "replay"] or connection_type == "replay":
-            self.connection = ReplayConnection()
-        elif ip == "mujoco" or connection_type == "mujoco":
-            from dimos.robot.unitree.mujoco_connection import MujocoConnection
-
-            self.connection = MujocoConnection(self._global_config)
-        else:
-            assert ip is not None, "IP address must be provided"
-            self.connection = UnitreeWebRTCConnection(ip)
+        assert ip is not None, "IP address must be provided"
+        self.connection = make_connection(ip, self._global_config)
 
         Module.__init__(self, *args, **kwargs)
 
@@ -232,7 +244,7 @@ class GO2Connection(Module, spec.Camera, spec.Pointcloud):
         self.standup()
         time.sleep(3)
         self.connection.balance_stand()
-        # self.record("go2_sf_office_4")
+        self.connection.disable_obstacle_avoidance()
 
     @rpc
     def stop(self) -> None:
@@ -340,4 +352,4 @@ def deploy(dimos: ModuleCoordinator, ip: str, prefix: str = "") -> "ModuleProxy"
     return connection
 
 
-__all__ = ["GO2Connection", "deploy", "go2_connection"]
+__all__ = ["GO2Connection", "deploy", "go2_connection", "make_connection"]
