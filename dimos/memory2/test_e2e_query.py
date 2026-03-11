@@ -48,6 +48,8 @@ class TestE2EQuery:
 
     def test_list_streams(self, session: SqliteSession) -> None:
         streams = session.list_streams()
+        print(streams)
+
         assert "color_image" in streams
         assert "lidar" in streams
 

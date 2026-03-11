@@ -250,6 +250,7 @@ class SqliteBackend(Configurable[BackendConfig], Generic[T]):
         self._codec: Codec[Any] = self.config.codec  # type: ignore[assignment]
         self._channel: LiveChannel[T] = self.config.live_channel or SubjectChannel()
         self._lock = threading.Lock()
+        self._tag_indexes: set[str] = set()
 
     @property
     def name(self) -> str:
@@ -304,12 +305,24 @@ class SqliteBackend(Configurable[BackendConfig], Generic[T]):
 
     # ── Write ────────────────────────────────────────────────────
 
+    def _ensure_tag_indexes(self, tags: dict[str, Any]) -> None:
+        """Auto-create expression indexes for any new tag keys."""
+        for key in tags:
+            if key not in self._tag_indexes and _IDENT_RE.match(key):
+                self._conn.execute(
+                    f'CREATE INDEX IF NOT EXISTS "{self._name}_tag_{key}" '
+                    f"ON \"{self._name}\"(json_extract(tags, '$.{key}'))"
+                )
+                self._tag_indexes.add(key)
+
     def append(self, obs: Observation[T]) -> Observation[T]:
         encoded = self._codec.encode(obs._data)
         pose = _decompose_pose(obs.pose)
         tags_json = json.dumps(obs.tags) if obs.tags else "{}"
 
         with self._lock:
+            if obs.tags:
+                self._ensure_tag_indexes(obs.tags)
             if pose:
                 px, py, pz, qx, qy, qz, qw = pose
             else:
