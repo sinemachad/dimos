@@ -44,11 +44,13 @@ class G1ConnectionBase(Module, ABC):
 
     @rpc
     @abstractmethod
-    def start(self) -> None: ...
+    def start(self) -> None:
+        super().start()
 
     @rpc
     @abstractmethod
-    def stop(self) -> None: ...
+    def stop(self) -> None:
+        super().stop()
 
     @rpc
     @abstractmethod
