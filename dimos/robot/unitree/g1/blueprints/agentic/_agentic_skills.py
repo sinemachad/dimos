@@ -17,6 +17,7 @@
 
 from dimos.agents.agent import agent
 from dimos.agents.skills.navigation import navigation_skill
+from dimos.agents.skills.speak_skill import speak_skill
 from dimos.core.blueprints import autoconnect
 from dimos.robot.unitree.g1.skill_container import g1_skills
 from dimos.robot.unitree.g1.system_prompt import G1_SYSTEM_PROMPT
@@ -24,6 +25,7 @@ from dimos.robot.unitree.g1.system_prompt import G1_SYSTEM_PROMPT
 _agentic_skills = autoconnect(
     agent(system_prompt=G1_SYSTEM_PROMPT),
     navigation_skill(),
+    speak_skill(),
     g1_skills(),
 )
 

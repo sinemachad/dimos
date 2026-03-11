@@ -123,4 +123,4 @@ def deploy(dimos: ModuleCoordinator, ip: str, local_planner: spec.LocalPlanner) 
     return connection
 
 
-__all__ = ["G1Connection", "deploy", "g1_connection"]
+__all__ = ["G1Connection", "G1ConnectionBase", "deploy", "g1_connection"]
