@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import field
 from functools import lru_cache
+import time
 from typing import (
     Any,
     Literal,
@@ -163,6 +164,7 @@ class Config(ModuleConfig):
     # Static items logged once after start. Maps entity_path -> callable(rr) returning Archetype
     static: dict[str, Callable[[Any], Archetype]] = field(default_factory=dict)
 
+    min_interval_sec: float = 0.1  # Rate-limit per entity path (default: 10 Hz max)
     entity_prefix: str = "world"
     topic_to_entity: Callable[[Any], str] | None = None
     viewer_mode: ViewerMode = field(default_factory=_resolve_viewer_mode)
@@ -243,6 +245,16 @@ class RerunBridgeModule(Module[Config]):
         # convert a potentially complex topic object into an str rerun entity path
         entity_path: str = self._get_entity_path(topic)
 
+        # Rate-limit per entity path to prevent viewer memory exhaustion.
+        # High-bandwidth streams (e.g. 30fps camera) would otherwise flood
+        # the viewer with data faster than it can evict, causing OOM.
+        if self.config.min_interval_sec > 0:
+            now = time.monotonic()
+            last = self._last_log.get(entity_path, 0.0)
+            if now - last < self.config.min_interval_sec:
+                return
+            self._last_log[entity_path] = now
+
         # apply visual overrides (including final_convert which handles .to_rerun())
         rerun_data: RerunData | None = self._visual_override_for_entity_path(entity_path)(msg)
 
@@ -263,6 +275,7 @@ class RerunBridgeModule(Module[Config]):
 
         super().start()
 
+        self._last_log: dict[str, float] = {}
         logger.info("Rerun bridge starting", viewer_mode=self.config.viewer_mode)
 
         # Initialize and spawn Rerun viewer

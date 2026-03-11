@@ -212,6 +212,9 @@ class GO2Connection(Module[_Config], spec.Camera, spec.Pointcloud):
         super().__init__(**kwargs)
         self.connection = make_connection(self.config.ip, self.config.g)
 
+        if hasattr(self.connection, "camera_info_static"):
+            self.camera_info_static = self.connection.camera_info_static
+
     @rpc
     def record(self, recording_name: str) -> None:
         lidar_store: TimedSensorStorage = TimedSensorStorage(f"{recording_name}/lidar")  # type: ignore[type-arg]
@@ -295,7 +298,7 @@ class GO2Connection(Module[_Config], spec.Camera, spec.Pointcloud):
 
     def publish_camera_info(self) -> None:
         while True:
-            self.camera_info.publish(_camera_info_static())
+            self.camera_info.publish(self.camera_info_static)
             time.sleep(1.0)
 
     @rpc
