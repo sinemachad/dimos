@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -77,25 +77,11 @@ testcases = [
 
 basic_cases = [c for c in testcases if "basic" in c.tags]
 
-# Mark sqlite xfail until backend methods are implemented
-_xfail_if_stub = {
-    "sqlite": pytest.mark.xfail(
-        reason="SqliteBackend not yet implemented", raises=NotImplementedError, strict=False
-    ),
-}
-
-
-def _apply_marks(cases: list[Case]) -> list[Any]:
-    return [
-        pytest.param(c, marks=_xfail_if_stub[c.name]) if c.name in _xfail_if_stub else c
-        for c in cases
-    ]
-
 
 # ── Tests ──────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("case", _apply_marks(basic_cases), ids=lambda c: c.name)
+@pytest.mark.parametrize("case", basic_cases, ids=lambda c: c.name)
 class TestStoreBasic:
     """Core store operations that every backend must support."""
 

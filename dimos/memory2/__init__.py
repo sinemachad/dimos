@@ -20,7 +20,7 @@ from dimos.memory2.filter import (
     TimeRangeFilter,
 )
 from dimos.memory2.impl.memory import ListBackend, MemorySession, MemoryStore
-from dimos.memory2.impl.sqlite import SqliteBackend, SqliteSession, SqliteStore
+from dimos.memory2.impl.sqlite import SqliteBackend, SqliteSession, SqliteStore, SqliteStoreConfig
 from dimos.memory2.livechannel import SubjectChannel
 from dimos.memory2.store import Session, SessionConfig, Store, StoreConfig, StreamNamespace
 from dimos.memory2.stream import Stream
@@ -55,6 +55,7 @@ __all__ = [
     "SqliteBackend",
     "SqliteSession",
     "SqliteStore",
+    "SqliteStoreConfig",
     "Store",
     "StoreConfig",
     "Stream",

@@ -13,5 +13,6 @@
 # limitations under the License.
 
 from dimos.memory2.vectorstore.memory import MemoryVectorStore
+from dimos.memory2.vectorstore.sqlite import SqliteVectorStore
 
-__all__ = ["MemoryVectorStore"]
+__all__ = ["MemoryVectorStore", "SqliteVectorStore"]
