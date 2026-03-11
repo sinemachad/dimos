@@ -480,6 +480,12 @@ def main() -> None:
         _preview()
         return
 
+    from dimos.protocol.service.lcmservice import autoconf
+
+    # Run autoconf before the TUI takes over the terminal,
+    # because typer.confirm() deadlocks inside raw mode.
+    autoconf()
+
     topic = "/dimos/resource_stats"
     if len(sys.argv) > 1 and sys.argv[1] == "--topic" and len(sys.argv) > 2:
         topic = sys.argv[2]

@@ -118,6 +118,12 @@ class LCMSpyApp(App):  # type: ignore[type-arg]
 def main() -> None:
     import sys
 
+    from dimos.protocol.service.lcmservice import autoconf
+
+    # Run autoconf before the TUI takes over the terminal,
+    # because typer.confirm() deadlocks inside raw mode.
+    autoconf()
+
     if len(sys.argv) > 1 and sys.argv[1] == "web":
         import os
 
