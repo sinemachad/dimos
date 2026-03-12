@@ -24,6 +24,7 @@ __getattr__, __dir__, __all__ = lazy.attach(
         "agentic.unitree_go2_agentic": ["unitree_go2_agentic"],
         "agentic.unitree_go2_agentic_huggingface": ["unitree_go2_agentic_huggingface"],
         "agentic.unitree_go2_agentic_mcp": ["unitree_go2_agentic_mcp"],
+        "agentic.unitree_go2_agentic_mcp_surveillance": ["unitree_go2_agentic_mcp_surveillance"],
         "agentic.unitree_go2_agentic_ollama": ["unitree_go2_agentic_ollama"],
         "agentic.unitree_go2_temporal_memory": ["unitree_go2_temporal_memory"],
         "basic.unitree_go2_basic": ["_linux", "_mac", "unitree_go2_basic"],
