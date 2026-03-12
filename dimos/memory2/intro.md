@@ -169,18 +169,3 @@ threading.Thread(
 # every new log is now automatically embedded and stored
 # embedded_logs.search(query, k=5).fetch() to query at any time
 ```
-
-## Full text search
-
-`.search_text(text)` does efficient substring matching:
-
-```python session=memory ansi=false
-for obs in logs.search_text("motor").fetch():
-    print(f"{obs.data}")
-```
-
-<!--Result:-->
-```
-Motor started
-Motor stopped
-```

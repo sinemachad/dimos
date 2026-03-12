@@ -337,34 +337,38 @@ class SqliteBackend(Configurable[BackendConfig], CompositeResource, Generic[T]):
             else:
                 px = py = pz = qx = qy = qz = qw = None  # type: ignore[assignment]
 
-            cur = self._conn.execute(
-                f'INSERT INTO "{self._name}" (ts, pose_x, pose_y, pose_z, pose_qx, pose_qy, pose_qz, pose_qw, tags) '
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, jsonb(?))",
-                (obs.ts, px, py, pz, qx, qy, qz, qw, tags_json),
-            )
-            row_id = cur.lastrowid
-            assert row_id is not None
-
-            bs = self.config.blob_store
-            if bs is None:
-                raise RuntimeError("BlobStore required but not configured")
-            bs.put(self._name, row_id, encoded)
-
-            # R*Tree spatial index
-            if pose:
-                self._conn.execute(
-                    f'INSERT INTO "{self._name}_rtree" (id, x_min, x_max, y_min, y_max, z_min, z_max) '
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (row_id, px, px, py, py, pz, pz),
+            try:
+                cur = self._conn.execute(
+                    f'INSERT INTO "{self._name}" (ts, pose_x, pose_y, pose_z, pose_qx, pose_qy, pose_qz, pose_qw, tags) '
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, jsonb(?))",
+                    (obs.ts, px, py, pz, qx, qy, qz, qw, tags_json),
                 )
+                row_id = cur.lastrowid
+                assert row_id is not None
 
-            vs = self.config.vector_store
-            if vs is not None:
-                emb = getattr(obs, "embedding", None)
-                if emb is not None:
-                    vs.put(self._name, row_id, emb)
+                bs = self.config.blob_store
+                if bs is None:
+                    raise RuntimeError("BlobStore required but not configured")
+                bs.put(self._name, row_id, encoded)
 
-            self._conn.commit()
+                # R*Tree spatial index
+                if pose:
+                    self._conn.execute(
+                        f'INSERT INTO "{self._name}_rtree" (id, x_min, x_max, y_min, y_max, z_min, z_max) '
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (row_id, px, px, py, py, pz, pz),
+                    )
+
+                vs = self.config.vector_store
+                if vs is not None:
+                    emb = getattr(obs, "embedding", None)
+                    if emb is not None:
+                        vs.put(self._name, row_id, emb)
+
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
 
         obs.id = row_id
         self._channel.notify(obs)

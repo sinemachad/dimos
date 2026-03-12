@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import threading
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 if TYPE_CHECKING:
@@ -53,17 +54,23 @@ class Observation(Generic[T]):
     tags: dict[str, Any] = field(default_factory=dict)
     _data: T | _Unloaded = field(default=_UNLOADED, repr=False)
     _loader: Callable[[], T] | None = field(default=None, repr=False)
+    _data_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @property
     def data(self) -> T:
         val = self._data
         if isinstance(val, _Unloaded):
-            if self._loader is None:
-                raise LookupError("No data and no loader set on this observation")
-            loaded = self._loader()
-            self._data = loaded
-            self._loader = None  # release closure
-            return loaded
+            with self._data_lock:
+                # Re-check after acquiring lock (double-checked locking)
+                val = self._data
+                if isinstance(val, _Unloaded):
+                    if self._loader is None:
+                        raise LookupError("No data and no loader set on this observation")
+                    loaded = self._loader()
+                    self._data = loaded
+                    self._loader = None  # release closure
+                    return loaded
+            return val  # type: ignore[return-value]
         return val
 
     def derive(self, *, data: Any, **overrides: Any) -> Observation[Any]:
