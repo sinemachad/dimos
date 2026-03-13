@@ -191,6 +191,18 @@ class HumanCLISubApp(SubApp):
         if self._thinking:
             self._thinking.hide()
 
+    def reinit_lcm(self) -> None:
+        """Recreate LCM transports after autoconf changed network config."""
+        self._human_transport = None
+        self._agent_transport = None
+        self._idle_transport = None
+        self._agent_seen = False
+        if self._agent_timeout_timer is not None:
+            self._agent_timeout_timer.stop()
+            self._agent_timeout_timer = None
+        self._set_conn_state(_ConnState.CONNECTING)
+        self.run_worker(self._init_transports, exclusive=True, thread=True)
+
     # ── connection state ──────────────────────────────────────────
 
     def _set_conn_state(self, state: _ConnState, error: str = "") -> None:

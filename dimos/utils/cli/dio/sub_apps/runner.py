@@ -192,6 +192,7 @@ class StatusSubApp(SubApp):
         self._stop_log = False
         self._failed_stop_pid: int | None = None
         self._poll_count = 0
+        self._tee_error_notified: set[str] = set()  # run_dirs already notified
         self._last_click_time: float = 0.0
         self._last_click_y: int = -1
         self._saved_status: str = ""
@@ -401,6 +402,9 @@ class StatusSubApp(SubApp):
                 f"poll #{self._poll_count}: old={old_names} new={new_names} changed={changed}"
             )
 
+        # Check for OutputTee write errors in running instances
+        self._check_tee_errors()
+
         if changed:
             self._rebuild_picker()
 
@@ -451,6 +455,22 @@ class StatusSubApp(SubApp):
                 # Auto-select the new one if nothing selected
                 self._selected_name = self._running_entries[0].name
                 self._show_running()
+
+    def _check_tee_errors(self) -> None:
+        """Notify once per run_dir if OutputTee encountered write errors."""
+        for entry in self._running_entries:
+            rd = getattr(entry, "run_dir", None)
+            if not rd or rd in self._tee_error_notified:
+                continue
+            err_file = Path(rd) / "tee_errors.log"
+            if err_file.exists():
+                self._tee_error_notified.add(rd)
+                name = getattr(entry, "name", "unknown")
+                self.app.notify(
+                    f"Log write errors in {name} — check tee_errors.log",
+                    severity="error",
+                    timeout=10,
+                )
 
     def _show_running(self) -> None:
         """Show controls for the selected running blueprint."""

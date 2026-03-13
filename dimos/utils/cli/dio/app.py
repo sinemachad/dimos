@@ -68,7 +68,7 @@ class DIOApp(App[None]):
         saved_theme = self._load_saved_theme()
         theme.set_theme(saved_theme)
         self.theme = f"dimos-{saved_theme}"
-        self._debug = debug
+        self._debug = debug  # controls the visual debug panel only
         self._sub_app_classes = get_sub_apps()
         n = len(self._sub_app_classes)
         # Which sub-app index each panel shows
@@ -81,17 +81,14 @@ class DIOApp(App[None]):
         self._quit_timer: object | None = None
         # Track which panel each instance is currently mounted in
         self._instance_pane: dict[int, int] = {}  # instance_idx -> panel (0..N-1)
-        # Debug log
-        self._debug_log_path: str | None = None
-        self._debug_log_file: object | None = None
-        if debug:
-            from pathlib import Path
+        # Debug log — always write to file, --debug only controls the visual panel
+        from pathlib import Path
 
-            log_path = Path.home() / ".dimos" / "dio-debug.log"
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            f = open(log_path, "w")
-            self._debug_log_path = str(log_path)
-            self._debug_log_file = f
+        log_path = Path.home() / ".dimos" / "dio-debug.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        f = open(log_path, "w")
+        self._debug_log_path = str(log_path)
+        self._debug_log_file = f
 
     @staticmethod
     def _load_saved_theme() -> str:
@@ -117,22 +114,23 @@ class DIOApp(App[None]):
     # ------------------------------------------------------------------
 
     def _log(self, msg: str) -> None:
-        if not self._debug:
-            return
         import re
 
         plain = re.sub(r"\[/?[^\]]*\]", "", msg)
+        # Always write to debug log file
         if self._debug_log_file is not None:
             try:
                 self._debug_log_file.write(plain + "\n")  # type: ignore[union-attr]
                 self._debug_log_file.flush()  # type: ignore[union-attr]
             except Exception:
                 pass
-        try:
-            panel = self.query_one("#debug-log", RichLog)
-            panel.write(msg)
-        except Exception:
-            pass
+        # Only write to visual panel when --debug
+        if self._debug:
+            try:
+                panel = self.query_one("#debug-log", RichLog)
+                panel.write(msg)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Compose
@@ -571,8 +569,7 @@ def main() -> None:
         clear_dio_hook()
         sys.stdin.close()
         sys.stdin = _real_stdin
-        if app._debug_log_path:
-            print(f"Debug log: {app._debug_log_path}")
+        print(f"Debug log: {app._debug_log_path}")
         if app._debug_log_file:
             try:
                 app._debug_log_file.close()  # type: ignore[union-attr]

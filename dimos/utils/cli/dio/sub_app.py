@@ -101,3 +101,11 @@ class SubApp(Widget):
 
         Override to stop LCM subscriptions, timers, etc.
         """
+
+    def reinit_lcm(self) -> None:
+        """Called after autoconf changes network config (e.g. multicast).
+
+        Sub-apps that hold LCM connections should override this to
+        tear down and recreate them, since connections created before
+        multicast was configured will be dead.
+        """

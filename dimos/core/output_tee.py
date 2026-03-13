@@ -40,10 +40,13 @@ class OutputTee:
         Directory where ``stdout.log`` and ``stdout.plain.log`` are created.
     """
 
+    _MAX_LOGGED_ERRORS = 5  # avoid flooding tee_errors.log on repeated failures
+
     def __init__(self, run_dir: Path) -> None:
         self._run_dir = run_dir
         self._reader_thread: threading.Thread | None = None
         self._stopped = False
+        self._error_count = 0
 
         # Internal pipe: we dup2 stdout/stderr to write_fd; the reader
         # thread reads from read_fd and fans out.
@@ -79,16 +82,34 @@ class OutputTee:
                 try:
                     self._color_log.write(data)
                     self._color_log.flush()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self._log_tee_error("stdout.log", exc)
                 # Write to stdout.plain.log (ANSI stripped)
                 try:
                     self._plain_log.write(_ANSI_RE.sub(b"", data))
                     self._plain_log.flush()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self._log_tee_error("stdout.plain.log", exc)
         except OSError:
             pass  # pipe closed
+
+    def _log_tee_error(self, target: str, exc: Exception) -> None:
+        """Record a write error to ``tee_errors.log`` in the run directory.
+
+        The TUI runner polls for this file and shows a notification on
+        first appearance.  Only the first few errors are logged to avoid
+        flooding disk on sustained failures (e.g. disk full).
+        """
+        self._error_count += 1
+        if self._error_count > self._MAX_LOGGED_ERRORS:
+            return
+        try:
+            msg = f"OutputTee: failed to write to {target}: {exc}\n"
+            err_path = self._run_dir / "tee_errors.log"
+            with open(err_path, "a") as f:
+                f.write(msg)
+        except Exception:
+            pass  # nothing more we can do
 
     def close(self) -> None:
         """Shut down the tee (flush, close files, join reader)."""

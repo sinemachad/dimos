@@ -288,6 +288,16 @@ class LauncherSubApp(SubApp):
                     _debug_log("_do_launch: running autoconf")
                     autoconf()
                     _debug_log("_do_launch: autoconf done")
+                    # Autoconf may have changed network config (e.g. enabled
+                    # multicast).  Tell all sub-apps to recreate their LCM
+                    # connections so they pick up the new config.
+                    def _reinit_all_lcm() -> None:
+                        for inst in self.app._instances:  # type: ignore[attr-defined]
+                            try:
+                                inst.reinit_lcm()
+                            except Exception:
+                                pass
+                    self.app.call_from_thread(_reinit_all_lcm)
                 except SystemExit:
                     _debug_log("_do_launch: autoconf rejected (critical check declined)")
                     def _cancelled() -> None:

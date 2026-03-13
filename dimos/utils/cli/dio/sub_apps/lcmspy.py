@@ -52,6 +52,12 @@ class LCMSpySubApp(SubApp):
         super().__init__()
         self._spy: Any = None
 
+    def _debug(self, msg: str) -> None:
+        try:
+            self.app._log(f"[dim]LCMSPY:[/dim] {msg}")  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
     def compose(self) -> ComposeResult:
         table: DataTable = DataTable(zebra_stripes=False, cursor_type=None)  # type: ignore[arg-type]
         table.add_column("Topic")
@@ -89,6 +95,17 @@ class LCMSpySubApp(SubApp):
             except Exception:
                 pass
             self._spy = None
+
+    def reinit_lcm(self) -> None:
+        self._debug("reinit_lcm called (autoconf changed network config)")
+        # Stop existing spy and start fresh
+        if self._spy:
+            try:
+                self._spy.stop()
+            except Exception:
+                pass
+            self._spy = None
+        self.run_worker(self._init_lcm, exclusive=True, thread=True)
 
     def _refresh_table(self) -> None:
         if not self._spy:

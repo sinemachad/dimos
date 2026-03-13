@@ -148,6 +148,12 @@ class DtopSubApp(SubApp):
                 pass
             self._lcm = None
 
+    def reinit_lcm(self) -> None:
+        self._debug("reinit_lcm called (autoconf changed network config)")
+        self._latest = None
+        self._reconnecting = False
+        self.run_worker(self._init_lcm, exclusive=True, thread=True)
+
     def _reconnect_lcm(self) -> None:
         """Tear down and re-create the LCM subscription."""
         try:
