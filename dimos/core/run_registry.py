@@ -132,8 +132,9 @@ def list_runs(alive_only: bool = True) -> list[RunEntry]:
             )
         )
 
-    # Also check legacy registry dir
-    REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+    # Also check legacy registry dir (don't create it if it doesn't exist)
+    if not REGISTRY_DIR.exists():
+        return results
     seen_pids = {r.pid for r in results}
     for f in sorted(REGISTRY_DIR.glob("*.json")):
         try:

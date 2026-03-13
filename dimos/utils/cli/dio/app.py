@@ -31,7 +31,9 @@ from dimos.utils.cli import theme
 from dimos.utils.cli.dio.sub_apps import get_sub_apps
 
 if TYPE_CHECKING:
+    from textual.dom import DOMNode
     from textual.events import Click, Key, Resize
+    from textual.timer import Timer
     from textual.widget import Widget
 
     from dimos.utils.cli.dio.sub_app import SubApp
@@ -63,7 +65,7 @@ class DIOApp(App[None]):
         super().__init__()
         # Register all DimOS themes
         for t in theme.get_textual_themes():
-            self.register_theme(t)
+            self.register_theme(t)  # type: ignore[arg-type]
         # Load saved theme from config
         saved_theme = self._load_saved_theme()
         theme.set_theme(saved_theme)
@@ -78,7 +80,7 @@ class DIOApp(App[None]):
         self._initialized = False
         self._instances: list[SubApp] = []
         self._quit_pressed_at: float = 0.0
-        self._quit_timer: object | None = None
+        self._quit_timer: Timer | None = None
         # Track which panel each instance is currently mounted in
         self._instance_pane: dict[int, int] = {}  # instance_idx -> panel (0..N-1)
         # Debug log — always write to file, --debug only controls the visual panel
@@ -99,7 +101,7 @@ class DIOApp(App[None]):
         try:
             config_path = Path(sys.prefix) / "dio-config.json"
             data = json.loads(config_path.read_text())
-            name = data.get("theme", theme.DEFAULT_THEME)
+            name = str(data.get("theme", theme.DEFAULT_THEME))
             # Migrate old theme names
             _MIGRATION = {"dark": "dark-one"}
             name = _MIGRATION.get(name, name)
@@ -192,7 +194,7 @@ class DIOApp(App[None]):
 
     def _panel_for_widget(self, widget: Widget | None) -> int | None:
         """Return which panel (0..N-1) contains the given widget, or None."""
-        node = widget
+        node: DOMNode | None = widget
         while node is not None:
             node_id = getattr(node, "id", None) or ""
             if node_id.startswith("display-"):
@@ -222,7 +224,7 @@ class DIOApp(App[None]):
 
     def _tab_for_widget(self, widget: Widget | None) -> int | None:
         """Return sub-app index if the widget is inside a sidebar tab, or None."""
-        node = widget
+        node: DOMNode | None = widget
         while node is not None:
             node_id = getattr(node, "id", None) or ""
             if node_id.startswith("tab-"):
@@ -468,13 +470,13 @@ class DIOApp(App[None]):
         bar = self.query_one("#hint-bar", Static)
         bar.update("Press Esc or Ctrl+Q again to exit")
         if self._quit_timer is not None:
-            self._quit_timer.stop()  # type: ignore[union-attr]
+            self._quit_timer.stop()
         self._quit_timer = self.set_timer(_QUIT_WINDOW, self._clear_quit_pending)
 
     def _clear_quit_pending(self) -> None:
         self._quit_pressed_at = 0.0
         if self._quit_timer is not None:
-            self._quit_timer.stop()  # type: ignore[union-attr]
+            self._quit_timer.stop()
             self._quit_timer = None
         if self._initialized:
             self._sync_hint()
@@ -492,22 +494,23 @@ class DIOApp(App[None]):
         from dimos.utils.cli.dio.confirm_screen import ConfirmScreen
 
         with self._pending_confirms_lock:
-            if message in self._pending_confirms:
-                # Another thread is already showing this question — wait for it
-                event, result = self._pending_confirms[message]
-            else:
+            if message not in self._pending_confirms:
                 event = threading.Event()
                 result: list[bool] = []
                 self._pending_confirms[message] = (event, result)
 
                 def _push() -> None:
-                    def _on_result(value: bool) -> None:
-                        result.append(value)
+                    def _on_result(value: bool | None) -> None:
+                        if value is not None:
+                            result.append(value)
                         event.set()
 
                     self.push_screen(ConfirmScreen(message, default), callback=_on_result)
 
                 self.call_from_thread(_push)
+            else:
+                # Another thread is already showing this question — wait for it
+                event, result = self._pending_confirms[message]
 
         event.wait()
 
@@ -524,21 +527,22 @@ class DIOApp(App[None]):
         from dimos.utils.cli.dio.confirm_screen import SudoScreen
 
         with self._pending_sudos_lock:
-            if message in self._pending_sudos:
-                event, result = self._pending_sudos[message]
-            else:
+            if message not in self._pending_sudos:
                 event = threading.Event()
                 result: list[bool] = []
                 self._pending_sudos[message] = (event, result)
 
                 def _push() -> None:
-                    def _on_result(value: bool) -> None:
-                        result.append(value)
+                    def _on_result(value: bool | None) -> None:
+                        if value is not None:
+                            result.append(value)
                         event.set()
 
                     self.push_screen(SudoScreen(message), callback=_on_result)
 
                 self.call_from_thread(_push)
+            else:
+                event, result = self._pending_sudos[message]
 
         event.wait()
 

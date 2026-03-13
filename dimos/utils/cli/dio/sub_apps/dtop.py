@@ -38,6 +38,7 @@ from dimos.utils.cli.dtop import (
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
+    from textual.widget import Widget
 
 
 class DtopSubApp(SubApp):
@@ -99,7 +100,7 @@ class DtopSubApp(SubApp):
         with VerticalScroll(id="dtop-scroll", classes="waiting"):
             yield Static(self._waiting_panel(), id="dtop-panels")
 
-    def get_focus_target(self) -> object | None:
+    def get_focus_target(self) -> Widget | None:
         """Return the VerticalScroll for focus."""
         try:
             return self.query_one("#dtop-scroll")

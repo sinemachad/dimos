@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from textual.app import ComposeResult
+    from textual.widget import Widget
 
 
 def _list_running_names() -> list[str]:
@@ -128,7 +129,7 @@ class LauncherSubApp(SubApp):
     def _start_poll_timer(self) -> None:
         self.set_interval(2.0, self._sync_status)
 
-    def get_focus_target(self) -> object | None:
+    def get_focus_target(self) -> Widget | None:
         try:
             return self.query_one("#launch-filter", Input)
         except Exception:
@@ -231,7 +232,7 @@ class LauncherSubApp(SubApp):
             message = f"Launch {name}?"
             warning = False
 
-        def _on_confirm(result: bool) -> None:
+        def _on_confirm(result: bool | None) -> None:
             _debug_log(f"_on_confirm: result={result}")
             if result:
                 self._launch(name)

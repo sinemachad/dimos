@@ -36,6 +36,7 @@ from dimos.utils.cli.dio.sub_app import SubApp
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
+    from textual.widget import Widget
 
 
 def _get_all_running() -> list[Any]:
@@ -258,7 +259,7 @@ class StatusSubApp(SubApp):
         self.set_interval(1.0, self._poll_running)
         self._debug("timer started")
 
-    def get_focus_target(self) -> object | None:
+    def get_focus_target(self) -> Widget | None:
         if self._running_entries or self._launching_name is not None:
             try:
                 return self.query_one("#runner-log", RichLog)
@@ -772,7 +773,7 @@ class StatusSubApp(SubApp):
             log_widget = self.query_one("#runner-log", RichLog)
             local_y = event.screen_y - log_widget.region.y
             line_idx = int(log_widget.scroll_y) + local_y
-            return max(1, line_idx + 1)
+            return int(max(1, line_idx + 1))
         except Exception:
             return 1
 
@@ -920,7 +921,7 @@ class StatusSubApp(SubApp):
 
         from dimos.utils.cli.dio.confirm_screen import ConfirmScreen
 
-        def _on_confirm(result: bool) -> None:
+        def _on_confirm(result: bool | None) -> None:
             if result:
                 self._do_stop_confirmed(stop_name, entry)
 

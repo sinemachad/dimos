@@ -59,7 +59,7 @@ class LCMSpySubApp(SubApp):
             pass
 
     def compose(self) -> ComposeResult:
-        table: DataTable = DataTable(zebra_stripes=False, cursor_type=None)  # type: ignore[arg-type]
+        table: DataTable[str] = DataTable(zebra_stripes=False, cursor_type=None)  # type: ignore[arg-type]
         table.add_column("Topic")
         table.add_column("Freq (Hz)")
         table.add_column("Bandwidth")

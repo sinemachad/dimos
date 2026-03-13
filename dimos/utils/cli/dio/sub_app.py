@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from textual.dom import DOMNode
 from textual.widget import Widget
 
 
@@ -41,17 +42,17 @@ class SubApp(Widget):
     can_focus = False
 
     def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self._subapp_initialized = False
 
     @property
-    def has_focus(self) -> bool:
+    def has_focus(self) -> bool:  # type: ignore[override]
         """True if the currently focused widget is inside this sub-app."""
         focused = self.app.focused
         if focused is None:
             return False
         # Walk up the DOM tree to see if focused widget is a descendant
-        node = focused
+        node: DOMNode | None = focused
         while node is not None:
             if node is self:
                 return True
