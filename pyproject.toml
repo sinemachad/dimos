@@ -23,7 +23,7 @@ name = "dimos"
 authors = [
     {name = "Dimensional Team", email = "build@dimensionalOS.com"},
 ]
-version = "0.0.10.post1"
+version = "0.0.11"
 description = "Powering agentive generalist robotics"
 requires-python = ">=3.10"
 readme = {file = "README.md", content-type = "text/markdown"}
@@ -202,6 +202,7 @@ manipulation = [
 
     # Hardware SDKs
     "piper-sdk",
+    "pyrealsense2",
     "xarm-python-sdk>=1.17.0",
 
     # Visualization (Optional)
