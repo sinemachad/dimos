@@ -19,8 +19,8 @@ from typing import Any
 
 from reactivex.disposable import Disposable
 
+from dimos.memory2.blobstore.base import BlobStore
 from dimos.memory2.registry import qual
-from dimos.memory2.type.backend import BlobStore
 from dimos.memory2.utils import open_sqlite_connection, validate_identifier
 from dimos.protocol.service.spec import BaseConfig
 

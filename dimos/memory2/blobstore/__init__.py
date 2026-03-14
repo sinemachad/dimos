@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from dimos.memory2.blobstore.base import BlobStore
 from dimos.memory2.blobstore.file import FileBlobStore
 from dimos.memory2.blobstore.sqlite import SqliteBlobStore
-from dimos.memory2.type.backend import BlobStore
 
 __all__ = ["BlobStore", "FileBlobStore", "SqliteBlobStore"]

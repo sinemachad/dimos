@@ -145,7 +145,7 @@ class SqliteStore(Store):
         if notifier_data is not None:
             notifier = deserialize_component(notifier_data)
         else:
-            from dimos.memory2.livechannel.subject import SubjectNotifier
+            from dimos.memory2.notifier.subject import SubjectNotifier
 
             notifier = SubjectNotifier()
 

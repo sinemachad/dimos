@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from dimos.memory2.vectorstore.base import VectorStore
 from dimos.memory2.vectorstore.memory import MemoryVectorStore
 from dimos.memory2.vectorstore.sqlite import SqliteVectorStore
 
-__all__ = ["MemoryVectorStore", "SqliteVectorStore"]
+__all__ = ["MemoryVectorStore", "SqliteVectorStore", "VectorStore"]

@@ -2,7 +2,7 @@
 
 Separates payload blob storage from metadata indexing. Observation payloads vary hugely in size — a `Vector3` is 24 bytes, a camera frame is megabytes. Storing everything inline penalizes metadata queries. BlobStore lets large payloads live elsewhere.
 
-## ABC (`type/backend.py`)
+## ABC (`blobstore/base.py`)
 
 ```python
 class BlobStore(Resource):
@@ -75,8 +75,8 @@ images = store.stream("images", Image, blob_store=file_blobs)           # overri
 ## Files
 
 ```
-type/backend.py       BlobStore ABC (alongside ObservationStore, Notifier, VectorStore)
 blobstore/
+  base.py             BlobStore ABC
   blobstore.md        this file
   __init__.py          re-exports BlobStore, FileBlobStore, SqliteBlobStore
   file.py             FileBlobStore

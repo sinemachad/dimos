@@ -12,12 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dimos.memory2.type.backend import (
-    BlobStore,
-    Notifier,
-    ObservationStore,
-    VectorStore,
-)
+from dimos.memory2.blobstore.base import BlobStore
+from dimos.memory2.notifier.base import Notifier
+from dimos.memory2.observationstore.base import ObservationStore
 from dimos.memory2.type.filter import (
     AfterFilter,
     AtFilter,
@@ -35,6 +32,7 @@ from dimos.memory2.type.observation import (
     Observation,
     _Unloaded,
 )
+from dimos.memory2.vectorstore.base import VectorStore
 
 __all__ = [
     "_UNLOADED",

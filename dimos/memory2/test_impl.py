@@ -24,7 +24,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from dimos.memory2.type.backend import BlobStore, VectorStore
+from dimos.memory2.blobstore.base import BlobStore
+from dimos.memory2.vectorstore.base import VectorStore
 
 if TYPE_CHECKING:
     from dimos.memory2.store import Store

@@ -37,12 +37,13 @@ Supporting Systems:
 
 | Package         | What                                                 | Docs                                             |
 |-----------------|------------------------------------------------------|--------------------------------------------------|
-| `type/`         | Observation, EmbeddedObservation, ObservationStore Protocol, Filter/StreamQuery, BlobStore/VectorStore/Notifier ABCs | |
+| `type/`         | Observation, EmbeddedObservation, Filter/StreamQuery  | |
 | `impl/`         | ObservationStore implementations (ListObservationStore, SqliteObservationStore) and Stores (MemoryStore, SqliteStore) | [impl/README.md](impl/README.md)                 |
-| `livechannel/`  | Live notification (SubjectNotifier)                  |                                                  |
-| `blobstore/`    | Pluggable blob storage (file, sqlite)                | [blobstore/blobstore.md](blobstore/blobstore.md) |
+| `notifier/`     | Notifier ABC + SubjectNotifier                       |                                                  |
+| `blobstore/`    | BlobStore ABC + implementations (file, sqlite)       | [blobstore/blobstore.md](blobstore/blobstore.md) |
 | `codecs/`       | Encode/decode for storage (pickle, JPEG, LCM)        | [codecs/README.md](codecs/README.md)             |
-| `vectorstore/`  | Pluggable vector storage (memory, sqlite)            |                                                  |
+| `vectorstore/`  | VectorStore ABC + implementations (memory, sqlite)   |                                                  |
+| `observationstore/` | ObservationStore Protocol + implementations      |                                                  |
 
 ## Docs
 

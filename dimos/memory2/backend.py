@@ -20,7 +20,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from dimos.memory2.codecs.base import Codec, codec_from_id, codec_id
-from dimos.memory2.livechannel.subject import SubjectNotifier
+from dimos.memory2.notifier.subject import SubjectNotifier
 from dimos.memory2.registry import deserialize_component
 from dimos.memory2.type.observation import _UNLOADED
 
@@ -29,10 +29,13 @@ if TYPE_CHECKING:
 
     from reactivex.abc import DisposableBase
 
+    from dimos.memory2.blobstore.base import BlobStore
     from dimos.memory2.buffer import BackpressureBuffer
-    from dimos.memory2.type.backend import BlobStore, Notifier, ObservationStore, VectorStore
+    from dimos.memory2.notifier.base import Notifier
+    from dimos.memory2.observationstore.base import ObservationStore
     from dimos.memory2.type.filter import StreamQuery
     from dimos.memory2.type.observation import Observation
+    from dimos.memory2.vectorstore.base import VectorStore
 
 T = TypeVar("T")
 

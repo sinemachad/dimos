@@ -17,8 +17,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from dimos.memory2.blobstore.base import BlobStore
 from dimos.memory2.registry import qual
-from dimos.memory2.type.backend import BlobStore
 from dimos.memory2.utils import validate_identifier
 from dimos.protocol.service.spec import BaseConfig
 

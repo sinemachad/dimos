@@ -31,8 +31,8 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
+    from dimos.memory2.blobstore.base import BlobStore
     from dimos.memory2.store import Store
-    from dimos.memory2.type.backend import BlobStore
 
 
 # ── Stores ────────────────────────────────────────────────────────

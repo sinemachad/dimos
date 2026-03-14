@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from dimos.memory2.type.backend import VectorStore
+from dimos.memory2.vectorstore.base import VectorStore
 
 if TYPE_CHECKING:
     from dimos.models.embedding.base import Embedding

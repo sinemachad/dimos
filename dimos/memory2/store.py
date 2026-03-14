@@ -18,9 +18,11 @@ from abc import abstractmethod
 from typing import Any, TypeVar, cast
 
 from dimos.core.resource import CompositeResource
+from dimos.memory2.blobstore.base import BlobStore
 from dimos.memory2.codecs.base import Codec
+from dimos.memory2.notifier.base import Notifier
 from dimos.memory2.stream import Stream
-from dimos.memory2.type.backend import BlobStore, Notifier, VectorStore
+from dimos.memory2.vectorstore.base import VectorStore
 from dimos.protocol.service.spec import BaseConfig, Configurable
 
 T = TypeVar("T")

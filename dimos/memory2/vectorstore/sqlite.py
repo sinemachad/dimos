@@ -21,8 +21,8 @@ from typing import TYPE_CHECKING, Any
 from reactivex.disposable import Disposable
 
 from dimos.memory2.registry import qual
-from dimos.memory2.type.backend import VectorStore
 from dimos.memory2.utils import open_sqlite_connection, validate_identifier
+from dimos.memory2.vectorstore.base import VectorStore
 from dimos.protocol.service.spec import BaseConfig
 
 if TYPE_CHECKING:

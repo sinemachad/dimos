@@ -21,7 +21,7 @@ import pytest
 from dimos.memory2.blobstore.file import FileBlobStore
 from dimos.memory2.blobstore.sqlite import SqliteBlobStore, SqliteBlobStoreConfig
 from dimos.memory2.impl.sqlite import SqliteStore
-from dimos.memory2.livechannel.subject import SubjectNotifier
+from dimos.memory2.notifier.subject import SubjectNotifier
 from dimos.memory2.observationstore.sqlite import SqliteObservationStoreConfig
 from dimos.memory2.registry import RegistryStore, deserialize_component, qual
 from dimos.memory2.vectorstore.sqlite import SqliteVectorStore, SqliteVectorStoreConfig
@@ -40,7 +40,7 @@ class TestQual:
         assert qual(SqliteVectorStore) == "dimos.memory2.vectorstore.sqlite.SqliteVectorStore"
 
     def test_qual_notifier(self) -> None:
-        assert qual(SubjectNotifier) == "dimos.memory2.livechannel.subject.SubjectNotifier"
+        assert qual(SubjectNotifier) == "dimos.memory2.notifier.subject.SubjectNotifier"
 
 
 # ── RegistryStore ────────────────────────────────────────────────

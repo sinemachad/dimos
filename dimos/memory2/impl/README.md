@@ -14,7 +14,7 @@ Metadata index backends for memory. Each index implements the `ObservationStore`
 ### 1. Implement the ObservationStore protocol
 
 ```python
-from dimos.memory2.type.backend import ObservationStore
+from dimos.memory2.observationstore.base import ObservationStore
 from dimos.memory2.type.filter import StreamQuery
 from dimos.memory2.type.observation import Observation
 

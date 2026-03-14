@@ -12,7 +12,9 @@ from dimos.memory2.buffer import (
 from dimos.memory2.embed import EmbedImages, EmbedText
 from dimos.memory2.impl.memory import MemoryStore
 from dimos.memory2.impl.sqlite import SqliteStore, SqliteStoreConfig
-from dimos.memory2.livechannel import SubjectNotifier
+from dimos.memory2.notifier import SubjectNotifier
+from dimos.memory2.notifier.base import Notifier
+from dimos.memory2.observationstore.base import ObservationStore
 from dimos.memory2.observationstore.memory import ListObservationStore
 from dimos.memory2.observationstore.sqlite import (
     SqliteObservationStore,
@@ -22,7 +24,6 @@ from dimos.memory2.registry import RegistryStore, deserialize_component, qual
 from dimos.memory2.store import Store, StoreConfig
 from dimos.memory2.stream import Stream
 from dimos.memory2.transform import FnTransformer, QualityWindow, Transformer
-from dimos.memory2.type.backend import Notifier, ObservationStore, VectorStore
 from dimos.memory2.type.filter import (
     AfterFilter,
     AtFilter,
@@ -35,6 +36,7 @@ from dimos.memory2.type.filter import (
     TimeRangeFilter,
 )
 from dimos.memory2.type.observation import EmbeddedObservation, Observation
+from dimos.memory2.vectorstore.base import VectorStore
 from dimos.memory2.vectorstore.sqlite import SqliteVectorStore, SqliteVectorStoreConfig
 
 __all__ = [

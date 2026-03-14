@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 if TYPE_CHECKING:
-    from dimos.memory2.type.backend import BlobStore
+    from dimos.memory2.blobstore.base import BlobStore
 
 
 class TestBlobStore:
