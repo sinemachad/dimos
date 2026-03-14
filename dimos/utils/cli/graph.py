@@ -22,6 +22,10 @@ import shutil
 import sys
 import tempfile
 import webbrowser
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from dimos.core.blueprints import Blueprint
 
 
 def _find_package_root(filepath: str) -> str | None:
@@ -43,8 +47,8 @@ def _find_package_root(filepath: str) -> str | None:
     return None
 
 
-def _build_html(python_file: str, *, show_disconnected: bool = True) -> str:
-    """Import a Python file, find all Blueprint globals, and return rendered HTML."""
+def _load_blueprints(python_file: str) -> list[tuple[str, "Blueprint"]]:
+    """Import *python_file* and return ``[(name, Blueprint), ...]``."""
     filepath = os.path.abspath(python_file)
     if not os.path.isfile(filepath):
         raise FileNotFoundError(filepath)
@@ -62,7 +66,6 @@ def _build_html(python_file: str, *, show_disconnected: bool = True) -> str:
     spec.loader.exec_module(mod)
 
     from dimos.core.blueprints import Blueprint
-    from dimos.core.introspection.svg import to_svg
 
     blueprints: list[tuple[str, Blueprint]] = []
     for name, obj in vars(mod).items():
@@ -75,6 +78,192 @@ def _build_html(python_file: str, *, show_disconnected: bool = True) -> str:
         raise RuntimeError("No Blueprint instances found in module globals.")
 
     print(f"Found {len(blueprints)} blueprint(s): {', '.join(n for n, _ in blueprints)}")
+    return blueprints
+
+
+def _build_html(python_file: str, *, show_disconnected: bool = True) -> str:
+    """Build an HTML page that renders blueprints as Mermaid diagrams."""
+    from dimos.core.introspection.blueprint.mermaid import render as mermaid_render
+
+    blueprints = _load_blueprints(python_file)
+
+    import json
+
+    sections = []
+    all_label_colors: dict[str, str] = {}
+    for name, bp in blueprints:
+        mermaid_code, label_colors = mermaid_render(bp, show_disconnected=show_disconnected)
+        all_label_colors.update(label_colors)
+        sections.append(
+            f'<h2>{name}</h2>\n'
+            f'<div class="viewport"><div class="canvas">'
+            f'<pre class="mermaid">\n{mermaid_code}\n</pre>'
+            f'</div></div>'
+        )
+    label_colors_json = json.dumps(all_label_colors)
+
+    return f"""\
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Blueprint Diagrams</title>
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ background: #1e1e1e; color: #ccc; font-family: sans-serif; overflow: hidden; height: 100vh; }}
+h2 {{ padding: 0.6em 1em 0.3em; border-bottom: 1px solid #444; position: relative; z-index: 1; }}
+.viewport {{
+    width: 100%; height: calc(100vh - 3em);
+    overflow: hidden; cursor: grab; position: relative;
+}}
+.viewport.grabbing {{ cursor: grabbing; }}
+.canvas {{
+    transform-origin: 0 0;
+    position: absolute;
+    padding: 2em;
+}}
+.controls {{
+    position: fixed; bottom: 1.2em; right: 1.2em; z-index: 10;
+    display: flex; gap: 0.4em; background: #2a2a2a; border-radius: 6px;
+    padding: 0.3em; border: 1px solid #444;
+}}
+.controls button {{
+    background: #333; color: #ccc; border: 1px solid #555; border-radius: 4px;
+    width: 2.2em; height: 2.2em; font-size: 1em; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}}
+.controls button:hover {{ background: #444; }}
+.edgeLabel rect, .edgeLabel polygon {{ fill: transparent !important; stroke: none !important; }}
+.edgeLabel .label-container {{ background: transparent !important; }}
+.edgeLabel foreignObject div, .edgeLabel foreignObject span, .edgeLabel foreignObject p {{
+    background: transparent !important; background-color: transparent !important;
+}}
+</style>
+</head><body>
+{"".join(sections)}
+<div class="controls">
+    <button id="zoomIn" title="Zoom in">+</button>
+    <button id="zoomOut" title="Zoom out">&minus;</button>
+    <button id="resetView" title="Reset view">&#8634;</button>
+</div>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({{
+    startOnLoad: true,
+    theme: 'dark',
+    flowchart: {{
+        curve: 'basis',
+        padding: 20,
+        nodeSpacing: 60,
+        rankSpacing: 80,
+    }},
+}});
+
+// Render, then set up pan/zoom and colour edge labels
+await mermaid.run();
+
+document.querySelectorAll('.viewport').forEach(vp => {{
+    const canvas = vp.querySelector('.canvas');
+    const svg = canvas.querySelector('svg');
+    let scale, panX, panY;
+    let dragging = false, startX, startY;
+
+    // Colour edge labels by matching text content to colour map
+    const labelColors = {label_colors_json};
+    svg.querySelectorAll('.edgeLabel').forEach(label => {{
+        const text = (label.textContent || '').trim();
+        const color = labelColors[text];
+        if (!color) return;
+        // Color all text elements inside the label
+        label.querySelectorAll('span, p, text').forEach(el => {{
+            if (el.tagName === 'text') el.setAttribute('fill', color);
+            else el.style.color = color;
+        }});
+        // Also try foreignObject children
+        label.querySelectorAll('foreignObject *').forEach(el => {{
+            el.style.color = color;
+        }});
+    }});
+
+    // Auto-fit: scale diagram to fill viewport with padding
+    function fitToView() {{
+        const vpRect = vp.getBoundingClientRect();
+        // Reset transform so we can measure the SVG's natural size
+        canvas.style.transform = 'none';
+        const svgRect = svg.getBoundingClientRect();
+        const svgW = svgRect.width;
+        const svgH = svgRect.height;
+        const pad = 40;
+        scale = Math.min((vpRect.width - pad) / svgW, (vpRect.height - pad) / svgH, 4);
+        scale = Math.max(scale * 2, 0.2);
+        panX = (vpRect.width - svgW * scale) / 2;
+        panY = (vpRect.height - svgH * scale) / 2;
+        apply();
+    }}
+
+    function apply() {{
+        canvas.style.transform = `translate(${{panX}}px, ${{panY}}px) scale(${{scale}})`;
+    }}
+
+    fitToView();
+
+    vp.addEventListener('wheel', e => {{
+        e.preventDefault();
+        const rect = vp.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        const newScale = Math.min(Math.max(scale * factor, 0.1), 10);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        apply();
+    }}, {{ passive: false }});
+
+    vp.addEventListener('mousedown', e => {{
+        if (e.button !== 0) return;
+        dragging = true; startX = e.clientX - panX; startY = e.clientY - panY;
+        vp.classList.add('grabbing');
+    }});
+    window.addEventListener('mousemove', e => {{
+        if (!dragging) return;
+        panX = e.clientX - startX; panY = e.clientY - startY;
+        apply();
+    }});
+    window.addEventListener('mouseup', () => {{
+        dragging = false;
+        vp.classList.remove('grabbing');
+    }});
+
+    // Button controls
+    document.getElementById('zoomIn').addEventListener('click', () => {{
+        const rect = vp.getBoundingClientRect();
+        const cx = rect.width / 2, cy = rect.height / 2;
+        const newScale = Math.min(scale * 1.3, 10);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale; apply();
+    }});
+    document.getElementById('zoomOut').addEventListener('click', () => {{
+        const rect = vp.getBoundingClientRect();
+        const cx = rect.width / 2, cy = rect.height / 2;
+        const newScale = Math.max(scale / 1.3, 0.1);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale; apply();
+    }});
+    document.getElementById('resetView').addEventListener('click', () => {{
+        fitToView();
+    }});
+}});
+</script>
+</body></html>"""
+
+
+def _build_html_graphviz(python_file: str, *, show_disconnected: bool = True) -> str:
+    """Build an HTML page that renders blueprints as Graphviz SVGs (requires ``dot``)."""
+    from dimos.core.introspection.svg import to_svg
+
+    blueprints = _load_blueprints(python_file)
 
     if not shutil.which("dot"):
         raise RuntimeError(
