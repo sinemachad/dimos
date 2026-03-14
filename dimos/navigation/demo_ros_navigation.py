@@ -18,7 +18,7 @@ from dimos.core.module_coordinator import ModuleCoordinator
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.geometry_msgs.Quaternion import Quaternion
 from dimos.msgs.geometry_msgs.Vector3 import Vector3
-from dimos.navigation import rosnav
+from dimos.navigation import rosnav_legacy as rosnav
 from dimos.protocol.service.lcmservice import autoconf
 from dimos.utils.logging_config import setup_logger
 
