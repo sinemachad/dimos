@@ -15,6 +15,7 @@
 import asyncio
 from collections.abc import Callable
 import threading
+from types import MappingProxyType
 from typing import Any, Protocol, overload
 
 
@@ -30,7 +31,19 @@ class RPCInspectable(Protocol):
     def rpcs(self) -> dict[str, Callable]: ...  # type: ignore[type-arg]
 
 
+# module.py and other places imports these constants and choose what to give RPCClient
+# the RPCClient below does not use these constants directly (by design)
+DEFAULT_RPC_TIMEOUT: float = 120.0
+DEFAULT_RPC_TIMEOUTS: MappingProxyType[str, float] = MappingProxyType({"start": 1200.0})
+
+
 class RPCClient(Protocol):
+    # call_sync resolves per-method overrides from rpc_timeouts,
+    # falling back to default_rpc_timeout. These are set by
+    # PubSubRPCMixin.__init__ at runtime.
+    rpc_timeouts: dict[str, float]
+    default_rpc_timeout: float
+
     # if we don't provide callback, we don't get a return unsub f
     @overload
     def call(self, name: str, arguments: Args, cb: None) -> None: ...
@@ -43,11 +56,18 @@ class RPCClient(Protocol):
 
     def call_nowait(self, name: str, arguments: Args) -> None: ...
 
-    # Timeout is resolved by the caller (RpcCall) using RPCClient.default_rpc_timeout
-    # and RPCClient.start_rpc_timeout. Callers must always pass an explicit value.
     def call_sync(
-        self, name: str, arguments: Args, rpc_timeout: float = 120.0
+        self, name: str, arguments: Args, rpc_timeout: float | None = None
     ) -> tuple[Any, Callable[[], None]]:
+        if rpc_timeout is None:
+            # Try full topic name first, then bare method name (after last "/").
+            rpc_timeout = self.rpc_timeouts.get(name)
+            if rpc_timeout is None:
+                method = name.rsplit("/", 1)[-1]
+                if method != name:
+                    rpc_timeout = self.rpc_timeouts.get(method, self.default_rpc_timeout)
+                else:
+                    rpc_timeout = self.default_rpc_timeout
         event = threading.Event()
 
         def receive_value(val) -> None:  # type: ignore[no-untyped-def]
@@ -99,4 +119,5 @@ class RPCServer(Protocol):
             self.serve_rpc(override_f, topic)
 
 
-class RPCSpec(RPCServer, RPCClient): ...
+class RPCSpec(RPCServer, RPCClient):
+    pass

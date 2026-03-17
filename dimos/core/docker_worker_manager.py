@@ -43,7 +43,7 @@ class DockerWorkerManager:
             for mod in successes:
                 with suppress(Exception):
                     mod.stop()
-            raise ExceptionGroup("docker deploy_parallel failed", errors)  # type: ignore[name-defined]
+            raise ExceptionGroup("docker deploy_parallel failed", errors)
 
         return safe_thread_map(
             specs,

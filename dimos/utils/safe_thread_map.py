@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-import os
 import sys
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -38,20 +37,6 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 R = TypeVar("R")
-
-_NOISE_PATHS = (
-    os.path.join("concurrent", "futures"),
-    "safe_thread_map.py",
-)
-
-
-def _strip_noise_frames(exc: Exception) -> Exception:
-    """Strip concurrent.futures and safe_thread_map frames from the top of a traceback."""
-    tb = exc.__traceback__
-    while tb is not None and any(p in tb.tb_frame.f_code.co_filename for p in _NOISE_PATHS):
-        tb = tb.tb_next
-    exc.__traceback__ = tb
-    return exc
 
 
 def safe_thread_map(
@@ -104,7 +89,7 @@ def safe_thread_map(
             try:
                 outcomes[idx] = fut.result()
             except Exception as e:
-                outcomes[idx] = _strip_noise_frames(e)
+                outcomes[idx] = e
 
     # Note: successes/errors are in completion order, not input order.
     # This is fine — on_errors only needs them for cleanup, not ordering.
@@ -120,6 +105,6 @@ def safe_thread_map(
         if on_errors is not None:
             zipped = [(items[i], outcomes[i]) for i in range(len(items))]
             return on_errors(zipped, successes, errors)  # type: ignore[return-value, no-any-return]
-        raise ExceptionGroup("safe_thread_map failed", errors)  # type: ignore[name-defined]
+        raise ExceptionGroup("safe_thread_map failed", errors)
 
     return [outcomes[i] for i in range(len(items))]  # type: ignore[misc]

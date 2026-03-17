@@ -124,11 +124,7 @@ def build_image(cfg: DockerModuleConfig) -> None:
     logger.info(f"Building Docker image: {cfg.docker_image}")
     # Stream stdout to terminal so the user sees build progress, but capture
     # stderr separately so we can include it in the error message on failure.
-    # docker_build_timeout=None means no timeout (unlimited) — the default,
-    # since builds on aarch64/Jetson can take 45+ minutes.
-    result = subprocess.run(
-        cmd, text=True, stderr=subprocess.PIPE, timeout=cfg.docker_build_timeout
-    )
+    result = subprocess.run(cmd, text=True, stderr=subprocess.PIPE)
     if result.returncode != 0:
         raise RuntimeError(
             f"Docker build failed with exit code {result.returncode}\nSTDERR:\n{result.stderr}"

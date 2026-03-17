@@ -200,7 +200,7 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         def _on_start_errors(
             _outcomes: list[Any], _successes: list[Any], errors: list[Exception]
         ) -> None:
-            raise ExceptionGroup("start_all_modules failed", errors)  # type: ignore[name-defined]
+            raise ExceptionGroup("start_all_modules failed", errors)
 
         safe_thread_map(modules, lambda m: m.start(), _on_start_errors)
 

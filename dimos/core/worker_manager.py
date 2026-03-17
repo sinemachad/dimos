@@ -89,10 +89,11 @@ class WorkerManager:
             for rpc_client in successes:
                 with suppress(Exception):
                     rpc_client.stop_rpc_client()
-            raise ExceptionGroup("worker deploy_parallel failed", errors)  # type: ignore[name-defined]
+            raise ExceptionGroup("worker deploy_parallel failed", errors)
 
         return safe_thread_map(
             assignments,
+            # item = [worker, module_class, global_config, kwargs]
             lambda item: RPCClient(item[0].deploy_module(item[1], item[2], item[3]), item[1]),
             _on_errors,
         )

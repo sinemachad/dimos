@@ -230,7 +230,6 @@ class TestDockerModuleGetattr:
         dm.rpc = MagicMock()
         dm.remote_name = "FakeMod"
         dm._unsub_fns = []
-        dm._rpc_timeouts = {}
 
         result = dm.do_thing
         assert isinstance(result, RpcCall)
