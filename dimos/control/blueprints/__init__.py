@@ -58,23 +58,19 @@ from dimos.control.blueprints.teleop import (
 )
 
 __all__ = [
-    # Basic (single arm, trajectory)
     "coordinator_basic",
     "coordinator_cartesian_ik_mock",
     "coordinator_cartesian_ik_piper",
     "coordinator_combined_xarm6",
-    # Dual arm (trajectory)
     "coordinator_dual_mock",
     "coordinator_dual_xarm",
     "coordinator_mobile_manip_mock",
     "coordinator_mock",
-    # Mobile manipulation
     "coordinator_mock_twist_base",
     "coordinator_piper",
     "coordinator_piper_xarm",
     "coordinator_teleop_dual",
     "coordinator_teleop_piper",
-    # Teleop (servo, velocity, cartesian IK, teleop IK)
     "coordinator_teleop_xarm6",
     "coordinator_teleop_xarm7",
     "coordinator_velocity_xarm6",
