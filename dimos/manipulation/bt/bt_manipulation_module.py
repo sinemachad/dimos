@@ -235,7 +235,7 @@ class BTManipulationModule(ManipulationModule):
         from pydrake.math import RigidTransform
 
         from dimos.manipulation.grasping import visualize_grasps as viz_grasps
-        from dimos.msgs.geometry_msgs import Transform
+        from dimos.msgs.geometry_msgs.Transform import Transform
 
         meshcat = self._world_monitor.world._meshcat
 

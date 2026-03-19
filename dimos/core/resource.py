@@ -15,10 +15,11 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from types import TracebackType
+    from typing import Self
 
 from reactivex.abc import DisposableBase
 from reactivex.disposable import CompositeDisposable

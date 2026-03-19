@@ -18,7 +18,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dimos.msgs.geometry_msgs import Pose, Transform, Vector3
+from dimos.msgs.geometry_msgs.Pose import Pose
+from dimos.msgs.geometry_msgs.Transform import Transform
+from dimos.msgs.geometry_msgs.Vector3 import Vector3
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()

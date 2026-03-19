@@ -32,7 +32,9 @@ import py_trees
 from py_trees.common import Status
 
 from dimos.manipulation.grasping.gripper_adapter import GripperAdapter
-from dimos.msgs.geometry_msgs import Pose, Quaternion, Vector3
+from dimos.msgs.geometry_msgs.Pose import Pose
+from dimos.msgs.geometry_msgs.Quaternion import Quaternion
+from dimos.msgs.geometry_msgs.Vector3 import Vector3
 from dimos.msgs.sensor_msgs.JointState import JointState
 from dimos.msgs.trajectory_msgs.TrajectoryStatus import TrajectoryState
 from dimos.utils.logging_config import setup_logger
