@@ -28,7 +28,6 @@ from dimos.robot.unitree_webrtc.keyboard_pose_teleop import keyboard_pose_teleop
 from dimos.robot.unitree_webrtc.keyboard_teleop import keyboard_teleop
 from dimos.robot.unitree_webrtc.unitree_g1_skill_container import g1_skills
 
-
 basic_ros = autoconnect(g1_connection())
 standard = basic_ros
 detection = standard
