@@ -1,0 +1,173 @@
+# Copyright 2025-2026 Dimensional Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""WebSocket server module that receives events from dimos-viewer.
+
+When dimos-viewer is started with ``--connect``, LCM multicast is unavailable
+across machines. The viewer falls back to sending click, twist, and stop events
+as JSON over a WebSocket connection. This module acts as the server-side
+counterpart: it listens for those connections and translates incoming messages
+into DimOS stream publishes.
+
+Message format (newline-delimited JSON, ``"type"`` discriminant):
+
+    {"type":"heartbeat","timestamp_ms":1234567890}
+    {"type":"click","x":1.0,"y":2.0,"z":3.0,"entity_path":"/world","timestamp_ms":1234567890}
+    {"type":"twist","linear_x":0.5,"linear_y":0.0,"linear_z":0.0,
+                    "angular_x":0.0,"angular_y":0.0,"angular_z":0.8}
+    {"type":"stop"}
+"""
+
+import asyncio
+import json
+import threading
+from typing import Any
+
+from dimos.core.core import rpc
+from dimos.core.module import Module, ModuleConfig
+from dimos.core.stream import Out
+from dimos.msgs.geometry_msgs.PointStamped import PointStamped
+from dimos.utils.logging_config import setup_logger
+
+logger = setup_logger()
+
+
+class Config(ModuleConfig):
+    port: int = 3030
+
+
+class RerunWebSocketServer(Module[Config]):
+    """Receives dimos-viewer WebSocket events and publishes them as DimOS streams.
+
+    The viewer connects to this module (not the other way around) when running
+    in ``--connect`` mode. Each click event is converted to a ``PointStamped``
+    and published on the ``clicked_point`` stream so downstream modules (e.g.
+    ``ReplanningAStarPlanner``) can consume it without modification.
+
+    Outputs:
+        clicked_point: 3-D world-space point from the most recent viewer click.
+    """
+
+    default_config = Config
+
+    clicked_point: Out[PointStamped]
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._ws_loop: asyncio.AbstractEventLoop | None = None
+        self._server_thread: threading.Thread | None = None
+        self._stop_event: asyncio.Event | None = None
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    @rpc
+    def start(self) -> None:
+        super().start()
+        self._server_thread = threading.Thread(
+            target=self._run_server, daemon=True, name="rerun-ws-server"
+        )
+        self._server_thread.start()
+        logger.info(f"RerunWebSocketServer starting on ws://0.0.0.0:{self.config.port}/ws")
+
+    @rpc
+    def stop(self) -> None:
+        if (
+            self._ws_loop is not None
+            and not self._ws_loop.is_closed()
+            and self._stop_event is not None
+        ):
+            self._ws_loop.call_soon_threadsafe(self._stop_event.set)
+        super().stop()
+
+    # ------------------------------------------------------------------
+    # Server
+    # ------------------------------------------------------------------
+
+    def _run_server(self) -> None:
+        """Entry point for the background server thread."""
+        self._ws_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._ws_loop)
+        try:
+            self._ws_loop.run_until_complete(self._serve())
+        finally:
+            self._ws_loop.close()
+
+    async def _serve(self) -> None:
+        import websockets.asyncio.server as ws_server
+
+        self._stop_event = asyncio.Event()
+
+        async with ws_server.serve(
+            self._handle_client,
+            host="0.0.0.0",
+            port=self.config.port,
+        ):
+            logger.info(
+                f"RerunWebSocketServer listening on ws://0.0.0.0:{self.config.port}/ws"
+            )
+            await self._stop_event.wait()
+
+    async def _handle_client(self, websocket: Any) -> None:
+        addr = websocket.remote_address
+        logger.info(f"RerunWebSocketServer: viewer connected from {addr}")
+        try:
+            async for raw in websocket:
+                self._dispatch(raw)
+        except Exception as exc:
+            logger.debug(f"RerunWebSocketServer: client {addr} disconnected ({exc})")
+
+    # ------------------------------------------------------------------
+    # Message dispatch
+    # ------------------------------------------------------------------
+
+    def _dispatch(self, raw: str | bytes) -> None:
+        try:
+            msg = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning(f"RerunWebSocketServer: ignoring non-JSON message: {raw!r}")
+            return
+
+        msg_type = msg.get("type")
+
+        if msg_type == "click":
+            pt = PointStamped(
+                x=float(msg["x"]),
+                y=float(msg["y"]),
+                z=float(msg["z"]),
+                ts=float(msg.get("timestamp_ms", 0)) / 1000.0,
+                frame_id=str(msg.get("entity_path", "")),
+            )
+            logger.debug(f"RerunWebSocketServer: click → {pt}")
+            self.clicked_point.publish(pt)
+
+        elif msg_type == "twist":
+            # Twist messages are not yet wired to a stream; log for observability.
+            logger.debug(
+                "RerunWebSocketServer: twist lin=({linear_x},{linear_y},{linear_z}) "
+                "ang=({angular_x},{angular_y},{angular_z})".format(**msg)
+            )
+
+        elif msg_type == "stop":
+            logger.debug("RerunWebSocketServer: stop")
+
+        elif msg_type == "heartbeat":
+            logger.debug(f"RerunWebSocketServer: heartbeat ts={msg.get('timestamp_ms')}")
+
+        else:
+            logger.warning(f"RerunWebSocketServer: unknown message type {msg_type!r}")
+
+
+rerun_ws_server = RerunWebSocketServer.blueprint
