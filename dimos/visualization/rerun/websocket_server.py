@@ -77,10 +77,7 @@ class RerunWebSocketServer(Module[Config]):
         self._ws_loop: asyncio.AbstractEventLoop | None = None
         self._server_thread: threading.Thread | None = None
         self._stop_event: asyncio.Event | None = None
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+        self._server_ready = threading.Event()
 
     @rpc
     def start(self) -> None:
@@ -95,6 +92,9 @@ class RerunWebSocketServer(Module[Config]):
 
     @rpc
     def stop(self) -> None:
+        # Wait briefly for the server thread to initialise _stop_event so we
+        # don't silently skip the shutdown signal (race with _serve()).
+        self._server_ready.wait(timeout=5.0)
         if (
             self._ws_loop is not None
             and not self._ws_loop.is_closed()
@@ -102,10 +102,6 @@ class RerunWebSocketServer(Module[Config]):
         ):
             self._ws_loop.call_soon_threadsafe(self._stop_event.set)
         super().stop()
-
-    # ------------------------------------------------------------------
-    # Server
-    # ------------------------------------------------------------------
 
     def _run_server(self) -> None:
         """Entry point for the background server thread."""
@@ -120,6 +116,7 @@ class RerunWebSocketServer(Module[Config]):
         import websockets.asyncio.server as ws_server
 
         self._stop_event = asyncio.Event()
+        self._server_ready.set()
 
         async with ws_server.serve(
             self._handle_client,
@@ -140,15 +137,15 @@ class RerunWebSocketServer(Module[Config]):
         except websockets.ConnectionClosed as exc:
             logger.debug(f"RerunWebSocketServer: client {addr} disconnected ({exc})")
 
-    # ------------------------------------------------------------------
-    # Message dispatch
-    # ------------------------------------------------------------------
-
     def _dispatch(self, raw: str | bytes) -> None:
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
             logger.warning(f"RerunWebSocketServer: ignoring non-JSON message: {raw!r}")
+            return
+
+        if not isinstance(msg, dict):
+            logger.warning(f"RerunWebSocketServer: expected JSON object, got {type(msg).__name__}")
             return
 
         msg_type = msg.get("type")

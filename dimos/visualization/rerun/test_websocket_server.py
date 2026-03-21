@@ -29,11 +29,6 @@ from dimos.visualization.rerun.websocket_server import RerunWebSocketServer
 _TEST_PORT = 13031
 
 
-# ---------------------------------------------------------------------------
-# MockViewerPublisher
-# ---------------------------------------------------------------------------
-
-
 class MockViewerPublisher:
     """Python mirror of the Rust WsPublisher in dimos-viewer.
 
@@ -55,10 +50,6 @@ class MockViewerPublisher:
         self._ws: Any = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
-    # ------------------------------------------------------------------
-    # Context-manager interface
-    # ------------------------------------------------------------------
-
     def __enter__(self) -> "MockViewerPublisher":
         self._loop = asyncio.new_event_loop()
         self._ws = self._loop.run_until_complete(self._connect())
@@ -74,10 +65,6 @@ class MockViewerPublisher:
         import websockets.asyncio.client as ws_client
 
         return await ws_client.connect(self._url)
-
-    # ------------------------------------------------------------------
-    # Send helpers  (mirror of Rust WsPublisher methods)
-    # ------------------------------------------------------------------
 
     def send_click(
         self,
@@ -138,11 +125,6 @@ class MockViewerPublisher:
         self._loop.run_until_complete(self._ws.send(json.dumps(msg)))
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _collect(received: list[Any], done: threading.Event) -> Any:
     """Return a callback that appends to *received* and signals *done*."""
 
@@ -174,11 +156,6 @@ def _wait_for_server(port: int, timeout: float = 3.0) -> None:
         except Exception:
             time.sleep(0.05)
     raise TimeoutError(f"Server on port {port} did not become ready within {timeout}s")
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 class TestRerunWebSocketServerStartup:

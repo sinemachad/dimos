@@ -29,6 +29,7 @@ user clicks in the 3D viewport.
 
 import asyncio
 import json
+import os
 import subprocess
 import threading
 import time
@@ -37,11 +38,6 @@ from typing import Any
 from dimos.visualization.rerun.websocket_server import RerunWebSocketServer
 
 _E2E_PORT = 13032
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_server(port: int = _E2E_PORT) -> RerunWebSocketServer:
@@ -75,11 +71,6 @@ def _send_messages(port: int, messages: list[dict[str, Any]], *, delay: float = 
             await asyncio.sleep(delay)
 
     asyncio.run(_run())
-
-
-# ---------------------------------------------------------------------------
-# Protocol-level E2E tests (no GUI required)
-# ---------------------------------------------------------------------------
 
 
 class TestViewerProtocolE2E:
@@ -264,11 +255,6 @@ class TestViewerProtocolE2E:
         assert xs == [1.0, 2.0], f"Unexpected xs: {xs}"
 
 
-# ---------------------------------------------------------------------------
-# Binary smoke test
-# ---------------------------------------------------------------------------
-
-
 class TestViewerBinaryConnectMode:
     """Smoke test: dimos-viewer binary starts in --connect mode and its WebSocket
     client attempts to connect to our Python server."""
@@ -297,9 +283,8 @@ class TestViewerBinaryConnectMode:
                 f"--ws-url=ws://127.0.0.1:{_E2E_PORT}/ws",
             ],
             env={
+                **os.environ,
                 "DISPLAY": "",
-                "HOME": "/home/dimos",
-                "PATH": "/home/dimos/.cargo/bin:/usr/bin:/bin",
             },
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
