@@ -229,10 +229,14 @@ class DockerModule(ModuleProxyProtocol):
                 r = subprocess.run(
                     [config.docker_bin, "pull", config.docker_image],
                     text=True,
+                    capture_output=True,
                     timeout=config.docker_pull_timeout,
                 )
                 if r.returncode != 0:
-                    raise RuntimeError(f"Failed to pull image '{config.docker_image}'.")
+                    raise RuntimeError(
+                        f"Failed to pull image '{config.docker_image}'.\n"
+                        f"stdout: {r.stdout}\nstderr: {r.stderr}"
+                    )
 
             reconnect = False
             if _is_container_running(config, self._container_name):
