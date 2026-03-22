@@ -452,7 +452,8 @@ class PGO(Module[PGOConfig]):
             ts = self._latest_time
 
         pgo = self._pgo
-        assert pgo is not None
+        if pgo is None:
+            return
 
         # Body-frame points
         if self.config.unregister_input:
@@ -524,7 +525,8 @@ class PGO(Module[PGOConfig]):
     def _publish_loop(self) -> None:
         """Periodically publish global map."""
         pgo = self._pgo
-        assert pgo is not None
+        if pgo is None:
+            return
         rate = self.config.global_static_map_publish_rate
         interval = 1.0 / rate if rate > 0 else 2.0
 
