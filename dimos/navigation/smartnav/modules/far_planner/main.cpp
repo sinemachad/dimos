@@ -1681,18 +1681,9 @@ int main(int argc, char** argv) {
                        cur_goal.x, cur_goal.y, dist_to_goal, vg_time);
                 fflush(stdout);
             } else if (is_fail) {
-                // Graph too sparse to plan — fall back to publishing the
-                // goal directly as waypoint.  This gets the robot moving,
-                // which creates trajectory nodes and grows the graph for
-                // future planning cycles.
-                geometry_msgs::PointStamped wp_msg;
-                wp_msg.header = dimos::make_header(G.worldFrameId,
-                    std::chrono::duration<double>(
-                        std::chrono::system_clock::now().time_since_epoch()).count());
-                wp_msg.point.x = cur_goal.x;
-                wp_msg.point.y = cur_goal.y;
-                wp_msg.point.z = cur_goal.z;
-                lcm.publish(topic_wp, &wp_msg);
+                // Graph too sparse to plan — do NOT publish the goal
+                // directly as waypoint (that drives the robot into walls).
+                // Wait for the graph to grow via exploration or manual driving.
 
                 // Count how many graph nodes are traversable and connected to goal
                 int traversable_count = 0, goal_connected = 0;

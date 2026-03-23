@@ -13,16 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""G1 nav sim with FAR planner — global route planning + local obstacle avoidance.
+"""G1 nav sim — FAR planner + PGO loop closure + local obstacle avoidance.
 
-Uses the FAR visibility-graph planner to find global routes around obstacles,
-with the local planner handling reactive avoidance along the route. Clicks
-set a goal for the FAR planner, which emits intermediate waypoints that guide
-the local planner through the environment.
+Full navigation stack with:
+- FAR visibility-graph global route planner
+- PGO pose graph optimization with loop closure detection (GTSAM iSAM2)
+- Local planner for reactive obstacle avoidance
+- Path follower for velocity control
 
 Data flow:
     Click → ClickToGoal → goal → FarPlanner → way_point → LocalPlanner → path
     → PathFollower → nav_cmd_vel → CmdVelMux → cmd_vel → UnityBridgeModule
+
+    registered_scan + odometry → PGO → corrected_odometry + global_map
 """
 
 from __future__ import annotations
@@ -45,6 +48,7 @@ from dimos.navigation.smartnav.modules.click_to_goal.click_to_goal import ClickT
 from dimos.navigation.smartnav.modules.cmd_vel_mux import CmdVelMux
 from dimos.navigation.smartnav.modules.far_planner.far_planner import FarPlanner
 from dimos.navigation.smartnav.modules.local_planner.local_planner import LocalPlanner
+from dimos.navigation.smartnav.modules.pgo.pgo import PGO
 from dimos.navigation.smartnav.modules.path_follower.path_follower import PathFollower
 from dimos.navigation.smartnav.modules.sensor_scan_generation.sensor_scan_generation import (
     SensorScanGeneration,
@@ -107,7 +111,10 @@ unitree_g1_nav_sim = autoconnect(
         ]
     ),
     TerrainMapExt.blueprint(),
-    FarPlanner.blueprint(),
+    FarPlanner.blueprint(
+        sensor_range=30.0,
+        visibility_range=25.0,
+    ),
     LocalPlanner.blueprint(
         extra_args=[
             "--autonomyMode",
@@ -138,6 +145,7 @@ unitree_g1_nav_sim = autoconnect(
             "0.2",
         ]
     ),
+    PGO.blueprint(),
     ClickToGoal.blueprint(),
     CmdVelMux.blueprint(),
     _vis,
