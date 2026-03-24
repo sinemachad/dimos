@@ -155,6 +155,11 @@ visualization = [
     "dimos-viewer>=0.30.0a4",
 ]
 
+tsdf = [
+    # VDBFusion: TSDF integration via OpenVDB (Python <= 3.10 prebuilt wheels).
+    # On Python 3.12 the pure-Python fallback in tsdf_volume.py is used instead.
+]
+
 agents = [
     "langchain==1.2.3",
     "langchain-chroma>=1,<2",
@@ -335,6 +340,11 @@ base = [
     "dimos[agents,web,perception,visualization,sim]",
 ]
 
+[dependency-groups]
+dev = [
+    "mypy>=1.19.0",
+]
+
 [tool.ruff]
 line-length = 100
 exclude = [
@@ -381,7 +391,7 @@ incremental = true
 strict = true
 warn_unused_ignores = false
 explicit_package_bases = true
-exclude = "^dimos/models/Detic(/|$)|^dimos/rxpy_backpressure(/|$)|.*/test_.|.*/conftest.py*"
+exclude = "^dimos/models/Detic(/|$)|^dimos/rxpy_backpressure(/|$)|.*/test_.|.*/conftest.py*|.*/build/"
 
 [[tool.mypy.overrides]]
 module = [

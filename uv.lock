@@ -1984,6 +1984,11 @@ web = [
     { name = "uvicorn" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "annotation-protocol", specifier = ">=1.4.0" },
@@ -2152,7 +2157,10 @@ requires-dist = [
     { name = "xformers", marker = "platform_machine == 'x86_64' and extra == 'cuda'", specifier = ">=0.0.20" },
     { name = "yapf", marker = "extra == 'misc'", specifier = "==0.40.2" },
 ]
-provides-extras = ["misc", "visualization", "agents", "web", "perception", "unitree", "manipulation", "cpu", "cuda", "dev", "psql", "sim", "drone", "dds", "docker", "base"]
+provides-extras = ["misc", "visualization", "tsdf", "agents", "web", "perception", "unitree", "manipulation", "cpu", "cuda", "dev", "psql", "sim", "drone", "dds", "docker", "base"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "mypy", specifier = ">=1.19.0" }]
 
 [[package]]
 name = "dimos-lcm"
