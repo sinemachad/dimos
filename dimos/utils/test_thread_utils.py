@@ -1,3 +1,17 @@
+# Copyright 2026 Dimensional Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Exhaustive tests for dimos/utils/thread_utils.py
 
 Covers: ThreadSafeVal, ModuleThread, AsyncModuleThread, ModuleProcess, safe_thread_map.
@@ -9,8 +23,6 @@ from __future__ import annotations
 import asyncio
 import os
 import pickle
-import signal
-import subprocess
 import sys
 import threading
 import time
@@ -27,10 +39,7 @@ from dimos.utils.thread_utils import (
     safe_thread_map,
 )
 
-
-# ---------------------------------------------------------------------------
 # Helpers: fake ModuleBase for testing ModuleThread / AsyncModuleThread / ModuleProcess
-# ---------------------------------------------------------------------------
 
 
 class FakeModule:
@@ -43,9 +52,7 @@ class FakeModule:
         self._disposables.dispose()
 
 
-# ===================================================================
 # ThreadSafeVal Tests
-# ===================================================================
 
 
 class TestThreadSafeVal:
@@ -97,7 +104,7 @@ class TestThreadSafeVal:
         result = threading.Event()
 
         def do_it() -> None:
-            with v as val:
+            with v:
                 _ = v.get()
             result.set()
 
@@ -111,7 +118,7 @@ class TestThreadSafeVal:
         result = threading.Event()
 
         def do_it() -> None:
-            with v as val:
+            with v:
                 _ = bool(v)
             result.set()
 
@@ -128,7 +135,7 @@ class TestThreadSafeVal:
         other_finished = threading.Event()
 
         def holder() -> None:
-            with v as val:
+            with v:
                 gate.wait(timeout=5)  # hold the lock until signaled
 
         def setter() -> None:
@@ -215,7 +222,7 @@ class TestThreadSafeVal:
         result = threading.Event()
 
         def do_it() -> None:
-            with v as val1:
+            with v:
                 with v as val2:
                     v.set(val2 + 1)
             result.set()
@@ -226,9 +233,7 @@ class TestThreadSafeVal:
         assert result.is_set(), "Nested with blocks deadlocked!"
 
 
-# ===================================================================
 # ModuleThread Tests
-# ===================================================================
 
 
 class TestModuleThread:
@@ -378,8 +383,8 @@ class TestModuleThread:
             mod = FakeModule()
             holder: list[ModuleThread] = []
 
-            def target() -> None:
-                while not holder[0].stopping:
+            def target(h: list[ModuleThread] = holder) -> None:
+                while not h[0].stopping:
                     time.sleep(0.001)
 
             mt = ModuleThread(module=mod, target=target, name="test-stop-dispose", start=False)
@@ -395,9 +400,7 @@ class TestModuleThread:
             t2.join(timeout=3)
 
 
-# ===================================================================
 # AsyncModuleThread Tests
-# ===================================================================
 
 
 class TestAsyncModuleThread:
@@ -475,9 +478,7 @@ class TestAsyncModuleThread:
         assert not errors
 
 
-# ===================================================================
 # ModuleProcess Tests
-# ===================================================================
 
 
 # Helper: path to a python that sleeps or echoes
@@ -516,7 +517,6 @@ class TestModuleProcess:
             args=[PYTHON, "-c", "import time; time.sleep(30)"],
             shutdown_timeout=2.0,
         )
-        pid = mp.pid
         mod.dispose()
         time.sleep(0.5)
         assert not mp.is_alive
@@ -526,7 +526,7 @@ class TestModuleProcess:
         mod = FakeModule()
         exit_called = threading.Event()
 
-        mp = ModuleProcess(
+        ModuleProcess(
             module=mod,
             args=[PYTHON, "-c", "print('done')"],
             on_exit=exit_called.set,
@@ -538,7 +538,7 @@ class TestModuleProcess:
         mod = FakeModule()
         exit_called = threading.Event()
 
-        mp = ModuleProcess(
+        ModuleProcess(
             module=mod,
             args=[PYTHON, "-c", "import sys; sys.exit(1)"],
             on_exit=exit_called.set,
@@ -584,7 +584,11 @@ class TestModuleProcess:
         mod = FakeModule()
         mp = ModuleProcess(
             module=mod,
-            args=[PYTHON, "-c", """import json; print(json.dumps({"event": "test", "key": "val"}))"""],
+            args=[
+                PYTHON,
+                "-c",
+                """import json; print(json.dumps({"event": "test", "key": "val"}))""",
+            ],
             log_json=True,
         )
         time.sleep(1.0)
@@ -666,7 +670,7 @@ class TestModuleProcess:
             mod.dispose()
             stop_called.set()
 
-        mp = ModuleProcess(
+        ModuleProcess(
             module=mod,
             args=[PYTHON, "-c", "pass"],  # exits immediately
             on_exit=fake_module_stop,
@@ -676,7 +680,7 @@ class TestModuleProcess:
 
     def test_on_exit_calls_module_stop_no_deadlock_stress(self) -> None:
         """Run the deadlock test multiple times under load."""
-        for i in range(10):
+        for _i in range(10):
             self.test_on_exit_calls_module_stop_no_deadlock()
 
     def test_deferred_start(self) -> None:
@@ -695,9 +699,13 @@ class TestModuleProcess:
         mod = FakeModule()
         exit_called = threading.Event()
 
-        mp = ModuleProcess(
+        ModuleProcess(
             module=mod,
-            args=[PYTHON, "-c", "import os, sys; sys.exit(0 if os.environ.get('MY_VAR') == '42' else 1)"],
+            args=[
+                PYTHON,
+                "-c",
+                "import os, sys; sys.exit(0 if os.environ.get('MY_VAR') == '42' else 1)",
+            ],
             env={**os.environ, "MY_VAR": "42"},
             on_exit=exit_called.set,
         )
@@ -716,9 +724,7 @@ class TestModuleProcess:
         mp.stop()
 
 
-# ===================================================================
 # safe_thread_map Tests
-# ===================================================================
 
 
 class TestSafeThreadMap:
@@ -801,9 +807,7 @@ class TestSafeThreadMap:
         assert sorted(completed) == [1, 2, 3]
 
 
-# ===================================================================
 # Integration: ModuleProcess on_exit -> dispose chain (the CI bug scenario)
-# ===================================================================
 
 
 class TestModuleProcessDisposeChain:
@@ -812,20 +816,23 @@ class TestModuleProcessDisposeChain:
     ModuleProcess.stop() -> tries to stop watchdog from inside watchdog thread.
     """
 
+    @staticmethod
+    def _make_fake_stop(mod: FakeModule, done: threading.Event) -> Callable:
+        def fake_stop() -> None:
+            mod.dispose()
+            done.set()
+
+        return fake_stop
+
     def test_chain_no_deadlock_fast_exit(self) -> None:
         """Process exits immediately."""
         for _ in range(20):
             mod = FakeModule()
             done = threading.Event()
-
-            def fake_stop() -> None:
-                mod.dispose()
-                done.set()
-
             ModuleProcess(
                 module=mod,
                 args=[PYTHON, "-c", "pass"],
-                on_exit=fake_stop,
+                on_exit=self._make_fake_stop(mod, done),
             )
             assert done.wait(timeout=5), "Deadlock in dispose chain (fast exit)"
 
@@ -834,15 +841,10 @@ class TestModuleProcessDisposeChain:
         for _ in range(10):
             mod = FakeModule()
             done = threading.Event()
-
-            def fake_stop() -> None:
-                mod.dispose()
-                done.set()
-
             ModuleProcess(
                 module=mod,
                 args=[PYTHON, "-c", "import time; time.sleep(0.1)"],
-                on_exit=fake_stop,
+                on_exit=self._make_fake_stop(mod, done),
             )
             assert done.wait(timeout=5), "Deadlock in dispose chain (slow exit)"
 
@@ -851,15 +853,10 @@ class TestModuleProcessDisposeChain:
         for _ in range(20):
             mod = FakeModule()
             done = threading.Event()
-
-            def fake_stop() -> None:
-                mod.dispose()
-                done.set()
-
             mp = ModuleProcess(
                 module=mod,
                 args=[PYTHON, "-c", "import time; time.sleep(0.05)"],
-                on_exit=fake_stop,
+                on_exit=self._make_fake_stop(mod, done),
                 shutdown_timeout=1.0,
             )
             # Race: the process might exit naturally or we might stop it
@@ -879,22 +876,13 @@ class TestModuleProcessDisposeChain:
         for _ in range(10):
             mod = FakeModule()
             done = threading.Event()
-
-            def fake_stop() -> None:
-                mod.dispose()
-                done.set()
-
             with mock.patch.object(ModuleThread, "stop", slow_stop):
                 ModuleProcess(
                     module=mod,
                     args=[PYTHON, "-c", "pass"],
-                    on_exit=fake_stop,
+                    on_exit=self._make_fake_stop(mod, done),
                 )
                 assert done.wait(timeout=10), "Deadlock with slow ModuleThread.stop()"
 
 
-# We need ExceptionGroup for safe_thread_map tests
-try:
-    ExceptionGroup
-except NameError:
-    from dimos.utils.typing_utils import ExceptionGroup
+from dimos.utils.typing_utils import ExceptionGroup

@@ -16,8 +16,8 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Sequence
+import sys
 
 if sys.version_info < (3, 13):
     from typing_extensions import TypeVar

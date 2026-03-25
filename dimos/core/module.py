@@ -11,14 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 import inspect
 import json
 import sys
-import threading
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -100,8 +98,10 @@ class ModuleBase(Configurable[ModuleConfigT], Resource):
         super().__init__(**config_args)
         self._disposables = CompositeDisposable()
         self.mod_state = ThreadSafeVal[ModState]("init")
-        self._async_thread = AsyncModuleThread( # NEEDS to be created after self._disposables exists
-            module=self
+        self._async_thread = (
+            AsyncModuleThread(  # NEEDS to be created after self._disposables exists
+                module=self
+            )
         )
         try:
             self.rpc = self.config.rpc_transport()

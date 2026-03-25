@@ -17,11 +17,12 @@
 from __future__ import annotations
 
 import asyncio
+import collections
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 import json
 import signal
 import subprocess
 import threading
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from typing import IO, TYPE_CHECKING, Any, Generic
 
 from reactivex.disposable import Disposable
@@ -40,9 +41,7 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 
-# ---------------------------------------------------------------------------
 # ThreadSafeVal: a lock-protected value with context-manager support
-# ---------------------------------------------------------------------------
 
 
 class ThreadSafeVal(Generic[T]):
@@ -112,9 +111,7 @@ class ThreadSafeVal(Generic[T]):
         return f"ThreadSafeVal({self._value!r})"
 
 
-# ---------------------------------------------------------------------------
 # ModuleThread: a thread that auto-registers with a module's disposables
-# ---------------------------------------------------------------------------
 
 
 class ModuleThread:
@@ -193,9 +190,7 @@ class ModuleThread:
         return self._thread.is_alive()
 
 
-# ---------------------------------------------------------------------------
 # AsyncModuleThread: a thread running an asyncio event loop, auto-registered
-# ---------------------------------------------------------------------------
 
 
 class AsyncModuleThread:
@@ -278,9 +273,7 @@ class AsyncModuleThread:
             self._thread.join(timeout=self._close_timeout)
 
 
-# ---------------------------------------------------------------------------
 # ModuleProcess: managed subprocess with log piping, auto-registered cleanup
-# ---------------------------------------------------------------------------
 
 
 class ModuleProcess:
@@ -341,6 +334,7 @@ class ModuleProcess:
         self._module = module
         self._stopped = False
         self._stop_lock = threading.Lock()
+        self.last_stderr: collections.deque[str] = collections.deque(maxlen=50)
 
         module._disposables.add(Disposable(self.stop))
         if start:
@@ -438,7 +432,13 @@ class ModuleProcess:
             if self._stopped:
                 return
 
-        logger.error("Process died unexpectedly", pid=proc.pid, returncode=rc)
+        last_stderr = "\n".join(self.last_stderr)
+        logger.error(
+            "Process died unexpectedly",
+            pid=proc.pid,
+            returncode=rc,
+            last_stderr=last_stderr[:500] if last_stderr else None,
+        )
         if self._on_exit is not None:
             self._on_exit()
 
@@ -451,10 +451,13 @@ class ModuleProcess:
         if stream is None:
             return
         log_fn = getattr(logger, level)
+        is_stderr = level == "warning"
         for raw in stream:
             line = raw.decode("utf-8", errors="replace").rstrip()
             if not line:
                 continue
+            if is_stderr:
+                self.last_stderr.append(line)
             if self._log_json:
                 try:
                     data = json.loads(line)
@@ -468,9 +471,7 @@ class ModuleProcess:
         stream.close()
 
 
-# ---------------------------------------------------------------------------
 # safe_thread_map: parallel map that collects all results before raising
-# ---------------------------------------------------------------------------
 
 
 def safe_thread_map(
