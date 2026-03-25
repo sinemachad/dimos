@@ -134,6 +134,10 @@ class ModuleBase(Configurable[ModuleConfigT], Resource):
                 return
             self.mod_state.set("stopped")
 
+        # dispose of things BEFORE making aspects like rpc and _tf invalid
+        if hasattr(self, "_disposables"):
+            self._disposables.dispose()  # stops _async_thread via disposable
+
         if self.rpc:
             self.rpc.stop()  # type: ignore[attr-defined]
             self.rpc = None  # type: ignore[assignment]
@@ -141,8 +145,6 @@ class ModuleBase(Configurable[ModuleConfigT], Resource):
         if hasattr(self, "_tf") and self._tf is not None:
             self._tf.stop()
             self._tf = None
-        if hasattr(self, "_disposables"):
-            self._disposables.dispose()  # stops _async_thread via disposable
 
         # Break the In/Out -> owner -> self reference cycle so the instance
         # can be freed by refcount instead of waiting for GC.

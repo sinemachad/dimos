@@ -180,7 +180,6 @@ class McpServer(Module):
     def stop(self) -> None:
         if self._uvicorn_server:
             self._uvicorn_server.should_exit = True
-            loop = self._async_thread.loop
             if self._serve_future is not None:
                 self._serve_future.result(timeout=5.0)
             self._uvicorn_server = None
