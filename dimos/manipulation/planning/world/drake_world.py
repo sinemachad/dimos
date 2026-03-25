@@ -193,6 +193,19 @@ class DrakeWorld(WorldSpec):
         # Obstacle source for dynamic obstacles
         self._obstacle_source_id: Any = None
 
+    def _find_existing_model_instance(self, urdf_path: Path) -> tuple[Any, Any] | None:
+        """Find an existing model instance (and its preview) for the same URDF.
+
+        When multiple robots share the same URDF (e.g., bimanual robot with
+        one full-body URDF), the model is loaded once and both robots reference
+        the same Drake model instance with different joint subsets.
+        """
+        resolved = urdf_path.resolve()
+        for robot_data in self._robots.values():
+            if robot_data.config.urdf_path.resolve() == resolved:
+                return robot_data.model_instance, robot_data.preview_model_instance
+        return None
+
     def add_robot(self, config: RobotModelConfig) -> WorldRobotID:
         """Add a robot to the world. Returns robot_id."""
         if self._finalized:
@@ -687,12 +700,38 @@ class DrakeWorld(WorldSpec):
     def _setup_collision_filters(self) -> None:
         """Filter collisions between adjacent links and user-specified pairs."""
         for robot_data in self._robots.values():
-            # Filter parent-child pairs (adjacent links always "collide")
+            # Build parent-child adjacency map for next-nearest-neighbor filtering
+            adjacency: dict[int, set[int]] = {}
             for joint_idx in self._plant.GetJointIndices(robot_data.model_instance):
                 joint = self._plant.get_joint(joint_idx)
                 parent, child = joint.parent_body(), joint.child_body()
                 if parent.index() != self._plant.world_body().index():
+                    # Filter adjacent (parent-child) pairs
                     self._exclude_body_pair(parent, child)
+                    # Track adjacency for skip-one filtering
+                    adjacency.setdefault(parent.index(), set()).add(child.index())
+                    adjacency.setdefault(child.index(), set()).add(parent.index())
+
+            # Filter next-nearest-neighbor pairs (2 hops apart in kinematic chain).
+            # Coarse collision meshes (e.g., convex hulls from auto-converted STL/DAE)
+            # can overlap between bodies separated by one intermediate link.
+            excluded_nn: set[tuple[int, int]] = set()
+            for body_idx, neighbors in adjacency.items():
+                for n1 in neighbors:
+                    for n2 in adjacency.get(n1, set()):
+                        if n2 != body_idx:
+                            pair = (min(body_idx, n2), max(body_idx, n2))
+                            if pair not in excluded_nn:
+                                excluded_nn.add(pair)
+                                self._exclude_body_pair(
+                                    self._plant.get_body(body_idx),
+                                    self._plant.get_body(n2),
+                                )
+            if excluded_nn:
+                logger.debug(
+                    f"Excluded {len(excluded_nn)} next-nearest-neighbor pairs "
+                    f"for '{robot_data.robot_id}'"
+                )
 
             # Filter user-specified pairs (e.g., parallel linkage grippers)
             for name1, name2 in robot_data.config.collision_exclusion_pairs:
@@ -703,7 +742,80 @@ class DrakeWorld(WorldSpec):
                 except RuntimeError:
                     logger.warning(f"Collision exclusion: link not found: {name1} or {name2}")
 
+        # Filter collisions involving uncontrolled bodies.
+        # When a full-body URDF is loaded but only a subset of joints are
+        # controlled, the uncontrolled bodies (e.g., wheels, torso) sit at
+        # their default positions and may overlap.  We collect controlled
+        # bodies from ALL robots sharing the same model instance, then
+        # exclude everything else.
+        processed_models: set[int] = set()
+        for robot_data in self._robots.values():
+            model_id = id(robot_data.model_instance)
+            if model_id in processed_models:
+                continue
+            processed_models.add(model_id)
+
+            # Collect controlled bodies from ALL robots sharing this model
+            controlled_bodies: set[int] = set()
+            for other in self._robots.values():
+                if id(other.model_instance) != model_id:
+                    continue
+                for joint_name in other.config.joint_names:
+                    try:
+                        joint = self._plant.GetJointByName(
+                            joint_name, other.model_instance
+                        )
+                        controlled_bodies.add(joint.parent_body().index())
+                        controlled_bodies.add(joint.child_body().index())
+                    except RuntimeError:
+                        pass
+
+            # Collect collision geometries for uncontrolled bodies
+            uncontrolled_geoms = GeometrySet()
+            all_model_geoms = GeometrySet()
+            n_uncontrolled = 0
+            for body_idx in self._plant.GetBodyIndices(robot_data.model_instance):
+                body = self._plant.get_body(body_idx)
+                geoms = self._plant.GetCollisionGeometriesForBody(body)
+                for geom_id in geoms:
+                    all_model_geoms.Add(geom_id)
+                if body_idx not in controlled_bodies:
+                    for geom_id in geoms:
+                        uncontrolled_geoms.Add(geom_id)
+                        n_uncontrolled += 1
+
+            if n_uncontrolled > 0:
+                self._scene_graph.collision_filter_manager().Apply(
+                    CollisionFilterDeclaration().ExcludeBetween(
+                        uncontrolled_geoms, all_model_geoms
+                    )
+                )
+                logger.info(
+                    f"Excluded {n_uncontrolled} uncontrolled geometries from "
+                    f"all intra-model collisions for '{robot_data.robot_id}'"
+                )
+
         logger.info("Collision filters applied")
+
+    def _exclude_model_pair(self, model_a: Any, model_b: Any) -> None:
+        """Exclude all collisions between two model instances."""
+        geoms_a = GeometrySet()
+        for body_idx in self._plant.GetBodyIndices(model_a):
+            for geom_id in self._plant.GetCollisionGeometriesForBody(
+                self._plant.get_body(body_idx)
+            ):
+                geoms_a.Add(geom_id)
+
+        geoms_b = GeometrySet()
+        for body_idx in self._plant.GetBodyIndices(model_b):
+            for geom_id in self._plant.GetCollisionGeometriesForBody(
+                self._plant.get_body(body_idx)
+            ):
+                geoms_b.Add(geom_id)
+
+        self._scene_graph.collision_filter_manager().Apply(
+            CollisionFilterDeclaration().ExcludeBetween(geoms_a, geoms_b)
+        )
 
     def _exclude_body_pair(self, body1: Any, body2: Any) -> None:
         """Exclude collision between two bodies."""

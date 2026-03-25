@@ -74,7 +74,7 @@ class RobotModelConfig(ModuleConfig):
     coordinator_task_name: str | None = None
     gripper_hardware_id: str | None = None
     # TF publishing for extra links (e.g., camera mount)
-    tf_extra_links: Sequence[str] = ()
+    tf_extra_links: list[str] = Field(default_factory=list)
     # Home/observe joint configuration for go_home skill
     home_joints: list[float] | None = None
     # Pre-grasp offset distance in meters (along approach direction)
