@@ -231,13 +231,24 @@ class R1ProArmAdapter:
     def get_dof(self) -> int:
         return self._dof
 
+    # Measured effective joint limits (radians) from test_09_joint_limits.py.
+    _LIMITS = {
+        "left": {
+            "lower": [-4.4485, -0.1717, -2.3547, -2.0889, -2.3553, -1.0462, -0.4713],
+            "upper": [1.3087, 3.1409, 2.3557, 0.3474, 2.3555, 1.0470, 0.5862],
+        },
+        "right": {
+            # Not yet measured — using URDF limits
+            "lower": [-4.4506, -3.1416, -2.3562, -2.0944, -2.3562, -1.0472, -1.5708],
+            "upper": [1.3090, 0.1745, 2.3562, 0.3491, 2.3562, 1.0472, 1.5708],
+        },
+    }
+
     def get_limits(self) -> JointLimits:
-        # Conservative joint limits for R1 Pro 7-DOF arms.
-        # Exact limits TBD from URDF — using safe defaults.
-        limit = 2 * math.pi
+        limits = self._LIMITS[self._side]
         return JointLimits(
-            position_lower=[-limit] * self._dof,
-            position_upper=[limit] * self._dof,
+            position_lower=list(limits["lower"]),
+            position_upper=list(limits["upper"]),
             velocity_max=[math.pi] * self._dof,
         )
 
