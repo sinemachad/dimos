@@ -155,6 +155,7 @@ class DockerModuleProxy(ModuleProxyProtocol):
         self._kwargs = kwargs
         self._running = threading.Event()
         self._is_built = threading.Event()
+        self._reconnected = False  # True when reusing a pre-existing container
         self.remote_name = module_class.__name__
         # Derive container name from image + class name: "my-registry/foo:v2" → "dimos_myclass_foo_v2"
         image_ref = config.docker_image.rsplit("/", 1)[-1]
@@ -208,6 +209,7 @@ class DockerModuleProxy(ModuleProxyProtocol):
                 if config.docker_reconnect_container:
                     logger.info(f"Reconnecting to running container: {self._container_name}")
                     reconnect = True
+                    self._reconnected = True
                 else:
                     logger.info(f"Stopping existing container: {self._container_name}")
                     _run(
@@ -269,8 +271,9 @@ class DockerModuleProxy(ModuleProxyProtocol):
         if not self._running.is_set():
             return
         self._running.clear()  # claim shutdown before any side-effects
-        with suppress(Exception):
-            self.rpc.call_nowait(f"{self.remote_name}/stop", ([], {}))
+        if not self._reconnected:
+            with suppress(Exception):
+                self.rpc.call_nowait(f"{self.remote_name}/stop", ([], {}))
         self._cleanup()
 
     def _cleanup(self) -> None:
@@ -281,7 +284,7 @@ class DockerModuleProxy(ModuleProxyProtocol):
             with suppress(Exception):
                 unsub()
         self._unsub_fns.clear()
-        if not getattr(getattr(self, "config", None), "docker_reconnect_container", False):
+        if not self._reconnected:
             with suppress(Exception):
                 _run(
                     [self.config.docker_bin, "stop", self._container_name],
