@@ -361,7 +361,7 @@ class Stream(CompositeResource, Generic[T]):
         """Publish each observation's data to a Module ``Out`` port.
 
         Iteration runs on the dimos thread pool (via :meth:`subscribe`).
-        Returns a ``DisposableBase`` suitable for ``_disposables.add()``.
+        Returns a ``DisposableBase`` suitable for ``register_disposable()``.
 
         Example::
 

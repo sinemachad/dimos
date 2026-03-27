@@ -62,8 +62,8 @@ class VlmStreamTester(Module):
     @rpc
     def start(self) -> None:
         super().start()
-        self._disposables.add(self.color_image.subscribe(self._on_image))  # type: ignore[arg-type]
-        self._disposables.add(self.answer_stream.subscribe(self._on_answer))  # type: ignore[arg-type]
+        self.register_disposable(self.color_image.subscribe(self._on_image))  # type: ignore[arg-type]
+        self.register_disposable(self.answer_stream.subscribe(self._on_answer))  # type: ignore[arg-type]
         self._worker = threading.Thread(target=self._run_queries, daemon=True)
         self._worker.start()
 

@@ -22,7 +22,6 @@ import time
 from typing import Any
 
 from dimos_lcm.std_msgs import String
-from reactivex.disposable import CompositeDisposable, Disposable
 
 from dimos.agents.annotation import skill
 from dimos.core.core import rpc
@@ -40,13 +39,6 @@ from dimos.robot.drone.mavlink_connection import MavlinkConnection
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
-
-
-def _add_disposable(composite: CompositeDisposable, item: Disposable | Any) -> None:
-    if isinstance(item, Disposable):
-        composite.add(item)
-    elif callable(item):
-        composite.add(Disposable(item))
 
 
 class Config(ModuleConfig):
@@ -126,8 +118,7 @@ class DroneConnectionModule(Module[Config]):
         if self.video_stream.start():
             logger.info("Video stream started")
             # Subscribe to video, store latest frame and publish it
-            _add_disposable(
-                self._disposables,
+            self.register_disposable(
                 self.video_stream.get_stream().subscribe(self._store_and_publish_frame),
             )
             # # TEMPORARY - DELETE AFTER RECORDING
@@ -139,30 +130,24 @@ class DroneConnectionModule(Module[Config]):
             logger.warning("Video stream failed to start")
 
         # Subscribe to drone streams
-        _add_disposable(
-            self._disposables, self.connection.odom_stream().subscribe(self._publish_tf)
-        )
-        _add_disposable(
-            self._disposables, self.connection.status_stream().subscribe(self._publish_status)
-        )
-        _add_disposable(
-            self._disposables, self.connection.telemetry_stream().subscribe(self._publish_telemetry)
+        self.register_disposable(self.connection.odom_stream().subscribe(self._publish_tf))
+        self.register_disposable(self.connection.status_stream().subscribe(self._publish_status))
+        self.register_disposable(
+            self.connection.telemetry_stream().subscribe(self._publish_telemetry)
         )
 
         # Subscribe to movement commands
-        _add_disposable(self._disposables, self.movecmd.subscribe(self.move))
+        self.register_disposable(self.movecmd.subscribe(self.move))
 
         # Subscribe to Twist movement commands
         if self.movecmd_twist.transport:
-            _add_disposable(self._disposables, self.movecmd_twist.subscribe(self._on_move_twist))
+            self.register_disposable(self.movecmd_twist.subscribe(self._on_move_twist))
 
         if self.gps_goal.transport:
-            _add_disposable(self._disposables, self.gps_goal.subscribe(self._on_gps_goal))
+            self.register_disposable(self.gps_goal.subscribe(self._on_gps_goal))
 
         if self.tracking_status.transport:
-            _add_disposable(
-                self._disposables, self.tracking_status.subscribe(self._on_tracking_status)
-            )
+            self.register_disposable(self.tracking_status.subscribe(self._on_tracking_status))
 
         # Start telemetry update thread
         import threading

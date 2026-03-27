@@ -30,7 +30,6 @@ from typing import (
 )
 
 from langchain_core.tools import tool
-from reactivex.disposable import CompositeDisposable
 
 from dimos.core.core import T, rpc
 from dimos.core.global_config import GlobalConfig, global_config
@@ -100,7 +99,6 @@ class ModuleBase(Configurable[ModuleConfigT], CompositeResource):
     _tf: TFSpec[Any] | None = None
     _loop: asyncio.AbstractEventLoop | None = None
     _loop_thread: threading.Thread | None
-    _disposables: CompositeDisposable
     _bound_rpc_calls: dict[str, RpcCall] = {}
     _module_closed: bool = False
     _module_closed_lock: threading.Lock
@@ -111,7 +109,6 @@ class ModuleBase(Configurable[ModuleConfigT], CompositeResource):
         super().__init__(**config_args)
         self._module_closed_lock = threading.Lock()
         self._loop, self._loop_thread = get_loop()
-        self._disposables = CompositeDisposable()
         try:
             self.rpc = self.config.rpc_transport()
             self.rpc.serve_module_rpc(self)
@@ -132,6 +129,7 @@ class ModuleBase(Configurable[ModuleConfigT], CompositeResource):
 
     @rpc
     def stop(self) -> None:
+        super().stop()
         self._close_module()
 
     def _close_module(self) -> None:
@@ -158,8 +156,6 @@ class ModuleBase(Configurable[ModuleConfigT], CompositeResource):
         if hasattr(self, "_tf") and self._tf is not None:
             self._tf.stop()
             self._tf = None
-        if hasattr(self, "_disposables"):
-            self._disposables.dispose()
 
         # Stop transports and break the In/Out -> owner -> self reference
         # cycle so the instance can be freed by refcount instead of waiting for GC.
@@ -188,7 +184,6 @@ class ModuleBase(Configurable[ModuleConfigT], CompositeResource):
         """Restore object from pickled state."""
         self.__dict__.update(state)
         # Reinitialize runtime attributes
-        self._disposables = CompositeDisposable()
         self._module_closed_lock = threading.Lock()
         self._loop = None
         self._loop_thread = None

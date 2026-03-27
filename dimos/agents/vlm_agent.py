@@ -60,8 +60,8 @@ class VLMAgent(Module[VLMAgentConfig]):
     @rpc
     def start(self) -> None:
         super().start()
-        self._disposables.add(self.color_image.subscribe(self._on_image))  # type: ignore[arg-type]
-        self._disposables.add(self.query_stream.subscribe(self._on_query))  # type: ignore[arg-type]
+        self.register_disposable(self.color_image.subscribe(self._on_image))  # type: ignore[arg-type]
+        self.register_disposable(self.query_stream.subscribe(self._on_query))  # type: ignore[arg-type]
 
     @rpc
     def stop(self) -> None:

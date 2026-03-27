@@ -60,7 +60,7 @@ class CostMapper(Module[Config]):
             elapsed_ms = (time.perf_counter() - start) * 1000
             return grid, elapsed_ms, rx_monotonic
 
-        self._disposables.add(
+        self.register_disposable(
             self.global_map.observable()  # type: ignore[no-untyped-call]
             .pipe(ops.map(_calculate_and_time))
             .subscribe(lambda result: _publish_costmap(result[0], result[1], result[2]))

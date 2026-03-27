@@ -96,7 +96,7 @@ class ObjectTracker2D(Module[ObjectTracker2DConfig]):
                 self._frame_arrival_time = arrival_time
 
         unsub = self.color_image.subscribe(on_frame)
-        self._disposables.add(Disposable(unsub))
+        self.register_disposable(Disposable(unsub))
         logger.info("ObjectTracker2D module started")
 
     @rpc
