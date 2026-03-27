@@ -90,7 +90,7 @@ def test_carving(grid: VoxelGrid, moment1: Go2MapperMoment, moment2: Go2MapperMo
     grid.add_frame(lidar_frame2)
     count_carving = grid.size()
 
-    voxel_size = grid.voxel_size
+    voxel_size = grid._voxel_size
     pts1 = np.asarray(lidar_frame1.pointcloud.points)
     pts2 = np.asarray(lidar_frame2.pointcloud.points)
     combined_vox = np.floor(np.vstack([pts1, pts2]) / voxel_size).astype(np.int64)
@@ -166,7 +166,7 @@ def test_roundtrip_range_preserved(grid: VoxelGrid) -> None:
     out_pcd = grid.get_global_pointcloud().to_legacy()
     out_pts = np.asarray(out_pcd.points)
 
-    voxel_size = grid.voxel_size
+    voxel_size = grid._voxel_size
     tolerance = voxel_size  # Allow one voxel of difference at boundaries
 
     # TODO: we want __eq__ on PointCloud2 - should actually compare

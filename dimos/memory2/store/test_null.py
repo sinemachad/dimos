@@ -16,39 +16,35 @@
 
 from __future__ import annotations
 
-from dimos.memory2.observationstore.memory import ListObservationStore
 from dimos.memory2.store.null import NullStore
-from dimos.memory2.type.filter import StreamQuery
-from dimos.memory2.type.observation import Observation
 
 
 def test_max_size_zero_monotonic_ids() -> None:
-    """ListObservationStore(max_size=0) assigns monotonically increasing IDs."""
-    store = ListObservationStore(name="test", max_size=0)
-    store.start()
+    """NullStore assigns monotonically increasing IDs despite discarding data."""
+    store = NullStore()
+    with store:
+        stream = store.stream("test", str)
+        obs0 = stream.append("hello")
+        obs1 = stream.append("world")
+        obs2 = stream.append("!")
 
-    id0 = store.insert(Observation(id=-1, ts=1.0, _data="hello"))
-    id1 = store.insert(Observation(id=-1, ts=2.0, _data="world"))
-    id2 = store.insert(Observation(id=-1, ts=3.0, _data="!"))
-
-    assert id0 == 0
-    assert id1 == 1
-    assert id2 == 2
+        assert obs0.id == 0
+        assert obs1.id == 1
+        assert obs2.id == 2
 
 
 def test_max_size_zero_empty_query() -> None:
-    """ListObservationStore(max_size=0) query always returns empty."""
-    store = ListObservationStore(name="test", max_size=0)
-    store.start()
-    store.insert(Observation(id=-1, ts=1.0, _data="data"))
-
-    assert list(store.query(StreamQuery())) == []
-    assert store.count(StreamQuery()) == 0
-    assert store.fetch_by_ids([0]) == []
+    """NullStore queries always return empty."""
+    store = NullStore()
+    with store:
+        stream = store.stream("test", str)
+        stream.append("data")
+        assert stream.count() == 0
+        assert stream.fetch() == []
 
 
 def test_null_store_discards_history() -> None:
-    """NullStore (max_size=0) discards history but still supports live streaming."""
+    """NullStore discards history but still supports live streaming."""
     store = NullStore()
     with store:
         stream = store.stream("test", int)
@@ -56,6 +52,5 @@ def test_null_store_discards_history() -> None:
         stream.append(2)
         stream.append(3)
 
-        # History is empty — max_size=0 discards everything
         assert stream.count() == 0
         assert stream.fetch() == []
