@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Twitch Plays Go2 — demo with replay simulator.
+"""Twitch Plays Go2 — demo with MuJoCo simulator.
 
-Wires TwitchVotes to the Go2 in replay mode via a small bridge module
+Wires TwitchVotes to the Go2 in MuJoCo via a small bridge module
 that converts winning vote choices into Twist commands on cmd_vel.
 
 Usage::
@@ -84,5 +84,5 @@ if __name__ == "__main__":
         ),
         ChoiceToCmdVel.blueprint(),
     ).global_config(
-        robot_ip="replay",
+        robot_ip="mujoco",
     ).build().loop()
