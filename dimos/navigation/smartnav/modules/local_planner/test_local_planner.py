@@ -16,6 +16,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from dimos.navigation.smartnav.modules.local_planner.local_planner import (
     LocalPlanner,
     LocalPlannerConfig,
@@ -63,6 +65,10 @@ class TestLocalPlannerModule:
         assert "path" in out_ports
 
 
+@pytest.mark.skipif(
+    not Path(__file__).resolve().parent.joinpath("result", "bin").exists(),
+    reason="Native binary not built (run nix build first)",
+)
 class TestPathResolution:
     """Verify native module paths resolve to real filesystem locations."""
 

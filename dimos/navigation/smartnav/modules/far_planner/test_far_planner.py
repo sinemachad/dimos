@@ -16,6 +16,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from dimos.navigation.smartnav.modules.far_planner.far_planner import FarPlanner, FarPlannerConfig
 
 
@@ -59,6 +61,10 @@ class TestFarPlannerModule:
         assert "way_point" in out_ports
 
 
+@pytest.mark.skipif(
+    not Path(__file__).resolve().parent.joinpath("result", "bin").exists(),
+    reason="Native binary not built (run nix build first)",
+)
 class TestPathResolution:
     """Verify native module paths resolve to real filesystem locations."""
 
