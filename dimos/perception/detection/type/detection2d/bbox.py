@@ -98,6 +98,37 @@ class Detection2DBBox(Detection2D):
             "bbox": f"[{x1:.0f},{y1:.0f},{x2:.0f},{y2:.0f}]",
         }
 
+    def draw_on(self, img: Any) -> None:
+        """Draw this detection's bbox and label onto a BGR numpy array (in-place)."""
+        import cv2
+        import numpy as np
+
+        x1, y1, x2, y2 = map(int, self.bbox)
+
+        h = hashlib.md5(self.name.encode()).digest()[0]
+        bgr = [int(c) for c in cv2.applyColorMap(np.uint8([[h]]), cv2.COLORMAP_HSV)[0][0]]
+
+        cv2.rectangle(img, (x1, y1), (x2, y2), bgr, 2)
+
+        label = self.name
+        if self.confidence < 1.0:
+            label = f"{self.name} {self.confidence:.2f}"
+        font_scale = max(0.4, min(img.shape[1] / 1200, 1.0))
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1)
+        cv2.rectangle(img, (x1, y1 - th - 6), (x1 + tw + 4, y1), (0, 0, 0), -1)
+        cv2.rectangle(img, (x1, y1 - th - 6), (x1 + tw + 4, y1), bgr, 1)
+        cv2.putText(
+            img, label, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 1
+        )
+
+    def annotated_image(self) -> Image:
+        """Return the full image with this detection's bbox and label drawn on it."""
+        img = self.image.to_opencv().copy()
+        self.draw_on(img)
+        from dimos.msgs.sensor_msgs.Image import Image
+
+        return Image.from_opencv(img, ts=self.ts)
+
     # return focused image, only on the bbox
     def cropped_image(self, padding: int = 20) -> Image:
         """Return a cropped version of the image focused on the bounding box.

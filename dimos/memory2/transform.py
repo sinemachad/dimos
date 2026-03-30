@@ -118,6 +118,38 @@ def stride(n: int) -> FnIterTransformer[T, T]:
     return FnIterTransformer(_stride)
 
 
+def speed() -> FnIterTransformer[Any, float]:
+    """Compute speed (m/s) between consecutive observations from their poses."""
+    import math
+
+    def _speed(upstream: Iterator[Observation[Any]]) -> Iterator[Observation[float]]:
+        prev: Observation[Any] | None = None
+        for obs in upstream:
+            if prev is not None and obs.pose is not None and prev.pose is not None:
+                dx = obs.pose[0] - prev.pose[0]
+                dy = obs.pose[1] - prev.pose[1]
+                dz = obs.pose[2] - prev.pose[2]
+                dt = obs.ts - prev.ts
+                v = math.sqrt(dx * dx + dy * dy + dz * dz) / dt if dt > 0 else 0.0
+                yield obs.derive(data=v)
+            prev = obs
+
+    return FnIterTransformer(_speed)
+
+
+def smooth(window: int) -> FnIterTransformer[float, float]:
+    """Sliding window average over obs.data (must be numeric)."""
+    import collections
+
+    def _smooth(upstream: Iterator[Observation[float]]) -> Iterator[Observation[float]]:
+        buf: collections.deque[float] = collections.deque(maxlen=window)
+        for obs in upstream:
+            buf.append(obs.data)
+            yield obs.derive(data=sum(buf) / len(buf))
+
+    return FnIterTransformer(_smooth)
+
+
 class QualityWindow(Transformer[T, T]):
     """Keeps the highest-quality item per time window.
 

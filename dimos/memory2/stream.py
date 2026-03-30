@@ -179,11 +179,11 @@ class Stream(CompositeResource, Generic[T]):
     def offset(self, n: int) -> Stream[T]:
         return self._replace_query(offset_val=n)
 
-    def search(self, query: Embedding, k: int) -> Stream[T]:
-        """Return top-k observations by cosine similarity to *query*.
+    def search(self, query: Embedding, k: int | None = None) -> Stream[T]:
+        """Rank observations by cosine similarity to *query*.
 
-        The backend handles the actual computation. ListObservationStore does
-        brute-force cosine; SqliteObservationStore pushes down to vec0.
+        If *k* is given, return only the top-k results.
+        If *k* is omitted, return **all** observations with similarity scores.
         """
         return self._replace_query(search_vec=query, search_k=k)
 
@@ -208,6 +208,20 @@ class Stream(CompositeResource, Generic[T]):
                 yield obs
 
         return self.transform(FnIterTransformer(_tap))
+
+    def scan(self, state: Any, fn: Callable[[Any, Observation[T]], tuple[Any, R]]) -> Stream[R]:
+        """Stateful map: ``fn(state, obs) -> (new_state, new_data)``.
+
+        Each observation is yielded with ``.data`` replaced by ``new_data``.
+        """
+
+        def _scan(upstream: Iterator[Observation[T]]) -> Iterator[Observation[R]]:
+            s = state
+            for obs in upstream:
+                s, val = fn(s, obs)
+                yield obs.derive(data=val)
+
+        return self.transform(FnIterTransformer(_scan))
 
     def map(self, fn: Callable[[Observation[T]], Observation[R]]) -> Stream[R]:
         """Transform each observation's data via callable."""
@@ -271,6 +285,10 @@ class Stream(CompositeResource, Generic[T]):
                 "Use .drain() or .save(target) instead."
             )
         return list(self)
+
+    def to_list(self) -> list[Observation[T]]:
+        """Alias for .fetch()."""
+        return self.fetch()
 
     def first(self) -> Observation[T]:
         """Return the first matching observation."""
@@ -450,4 +468,5 @@ class Stream(CompositeResource, Generic[T]):
             )
         else:
             obs = Observation(id=-1, ts=_ts, pose=pose, tags=_tags, _data=payload)
+        return self._source.append(obs)
         return self._source.append(obs)

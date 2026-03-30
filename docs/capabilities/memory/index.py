@@ -23,8 +23,9 @@ from dimos.mapping.pointclouds.occupancy import (
     general_occupancy,
 )
 from dimos.memory2.store.sqlite import SqliteStore
+from dimos.memory2.transform import smooth
 from dimos.memory2.vis.drawing import Drawing
-from dimos.memory2.vis.type import Point
+from dimos.memory2.vis.type import Color, Point
 from dimos.models.embedding.clip import CLIPModel
 from dimos.utils.data import get_data
 
@@ -60,25 +61,53 @@ costmap = simple_inflate(general_occupancy(global_map), 0.05)
 drawing = Drawing()
 drawing.add(costmap)
 
-store.streams.lidar.map(
-    lambda obs: drawing.add(Point(obs.pose_stamped, color="red", radius=0.01))
+# store.streams.color_image.tap(
+#     lambda obs: drawing.add(
+#         Point(
+#             obs.pose_stamped,
+#             color=Color("brightness", value=obs.data.brightness, cmap="inferno"),
+#             radius=0.025,
+#         )
+#     )
+# ).drain()
+
+# store.streams.color_image.transform(speed(window=20)).tap(
+#     lambda obs: drawing.add(
+#         Point(
+#             obs.pose_stamped,
+#             color=Color("speed", value=obs.data, cmap="inferno"),
+#             radius=0.025,
+#         )
+#     )
+# ).drain()
+
+clip = CLIPModel()
+
+embedded = store.streams.color_image_embedded
+
+search_text = "bottle"
+text_vector = clip.embed_text(search_text)
+
+embedded.search(text_vector).order_by("ts").map(
+    lambda obs: obs.derive(data=obs.similarity)
+).transform(smooth(10)).tap(
+    lambda obs: drawing.add(
+        Point(obs.pose_stamped, color=Color("similarity", obs.data, cmap="turbo"), radius=0.025)
+    )
 ).drain()
 
 
-# store.streams.color_image.map(
-#     lambda obs: drawing.add(Point(obs.pose_stamped, color="#ff0000", radius=0.025))
-# ).last()
+# vlm = MoondreamVlModel()
 
-# store.streams.color_image_embedded.map(lambda obs: drawing.add(obs.pose_stamped)).last()
+# plot_mosaic(
+#     embedded.search(text_vector, k=16)
+#     .map(lambda obs: vlm.query_detections(obs.data, search_text))
+#     .tap(print)
+#     .map(lambda detection: detection.annotated_image())
+#     .to_list(),
+#     "assets/images.png",
+#     cols=4,
+# )
 
-clip = CLIPModel()
-embedded = store.streams.color_image_embedded
-
-imagelist = []
-
-embeddings = embedded.search(clip.embed_text("bottles"), k=20)
-
-drawing.add(embeddings.tap(lambda obs: imagelist.append(obs.data)))
 
 drawing.to_svg("assets/imageposes.svg")
-plot_mosaic(imagelist, "assets/images.png", cols=4)

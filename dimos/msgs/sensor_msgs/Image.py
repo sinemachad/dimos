@@ -375,6 +375,12 @@ class Image(Timestamped):
         return Image(data=cropped_data, format=self.format, frame_id=self.frame_id, ts=self.ts)
 
     @property
+    def brightness(self) -> float:
+        """Return mean brightness in [0, 1]."""
+        gray = self.to_grayscale().data
+        return float(gray.mean() / 255.0)
+
+    @property
     def sharpness(self) -> float:
         """Return sharpness score.
 

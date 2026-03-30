@@ -84,6 +84,17 @@ class ImageDetections(Generic[T], TableStr):
             detections=[det.to_ros_detection2d() for det in self.detections],
         )
 
+    def annotated_image(self) -> Image:
+        """Return the image with all detection bboxes and labels drawn on it."""
+        img = self.image.to_opencv().copy()
+        for det in self.detections:
+            if hasattr(det, "draw_on"):
+                det.draw_on(img)
+
+        from dimos.msgs.sensor_msgs.Image import Image as ImageMsg
+
+        return ImageMsg.from_opencv(img, ts=self.image.ts)
+
     def to_foxglove_annotations(self) -> ImageAnnotations:
         if not self.detections:
             return ImageAnnotations(

@@ -136,9 +136,10 @@ class TestImportReplay:
 
         embedded = session.stream("color_image_embedded", Image)
 
-        # Downsample to 1Hz, then embed
+        # Downsample to 2Hz, then embed
         pipeline = (
-            video.transform(QualityWindow(lambda img: img.sharpness, window=1.0))
+            video.filter(lambda obs: obs.data.brightness > 0.1)
+            .transform(QualityWindow(lambda img: img.sharpness, window=0.5))
             .transform(EmbedImages(clip))
             .save(embedded)
         )
@@ -297,4 +298,5 @@ class TestEmbedImages:
         for obs in results:
             assert obs.similarity is not None
             assert obs.pose is not None
+            print(f"sim={obs.similarity:.3f} ts={obs.ts} pose={obs.pose}")
             print(f"sim={obs.similarity:.3f} ts={obs.ts} pose={obs.pose}")

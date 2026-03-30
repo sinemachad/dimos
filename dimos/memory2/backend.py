@@ -171,7 +171,7 @@ class Backend(CompositeResource, Generic[T]):
         vs = self.vector_store
         assert vs is not None and query.search_vec is not None
 
-        hits = vs.search(self.name, query.search_vec, query.search_k or 10)
+        hits = vs.search(self.name, query.search_vec, query.search_k or 4096)
         if not hits:
             return
 
