@@ -105,23 +105,29 @@ similarity_stream.tap(
 drawing.to_svg("assets/imageposes.svg")
 
 graph = GraphTime()
-graph.add(similarity_stream, label=f'similarity to "{search_text}"', color="#e74c3c")
-graph.to_svg("assets/similarity_time.svg")
 
-speed_graph = GraphTime()
-speed_graph.add(
-    store.streams.color_image.transform(speed()).transform(smooth(20)),
+graph.add(
+    similarity_stream.map(lambda obs: obs.derive(data=obs.data * 3)),
+    label=f'similarity to "{search_text}"',
+    color="#e74c3c",
+)
+
+graph.add(
+    store.streams.color_image.transform(speed()).transform(smooth(30)),
     label="speed (m/s)",
     color="#3498db",
 )
-speed_graph.to_svg("assets/speed_time.svg")
 
-brightness_graph = GraphTime()
-brightness_graph.add(
+graph.add(
     store.streams.color_image.map(lambda obs: obs.derive(data=obs.data.brightness)).transform(
         smooth(10)
     ),
     label="brightness",
     color="#f1c40f",
 )
-brightness_graph.to_svg("assets/brightness_time.svg")
+
+graph.to_svg("assets/timegraph.svg")
+
+graph.to_svg("assets/timegraph.svg")
+
+graph.to_svg("assets/timegraph.svg")

@@ -46,14 +46,6 @@ Stream("color_image_embedded") | vector_search(k=10): 10 items, 2025-12-26 11:10
 Result:
 ![output](assets/imageposes.svg)
 
-
-
-
-
-![output](assets/similarity_time.svg)
-
-![output](assets/speed_time.svg)
-
-![output](assets/brightness_time.svg)
+z![output](assets/timegraph.svg)4
 
 ![output](assets/images.png)
