@@ -112,8 +112,8 @@ class Drawing2D:
             )
 
     def add_embedded_observation(self, obs: EmbeddedObservation[Any], **kwargs: Any) -> None:
-        """Render an embedded observation as an arrow."""
-        self._elements.append(Arrow(msg=obs.pose_stamped, **kwargs))
+        """Store embedded observation directly — each renderer decides presentation."""
+        self._elements.append(obs)
 
     def add_observation(self, obs: Observation[Any], **kwargs: Any) -> None:
         """Smart dispatch: inspect observation data type to pick vis type."""
@@ -144,6 +144,12 @@ class Drawing2D:
             with open(path, "w") as f:
                 f.write(svg)
         return svg
+
+    def to_rerun(self, app_id: str = "drawing2d", spawn: bool = True) -> None:
+        """Render to Rerun viewer."""
+        from dimos.memory2.vis.drawing2d.rerun import render
+
+        render(self, app_id=app_id, spawn=spawn)
 
     def _repr_svg_(self) -> str:
         """Jupyter inline display."""

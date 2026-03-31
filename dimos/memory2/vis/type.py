@@ -148,6 +148,7 @@ SceneElement = Union[
     Polyline,
     Text,
     "OccupancyGrid",  # pass-through, rendered as base map raster
+    "EmbeddedObservation",  # pass-through, renderer decides presentation
 ]
 
 

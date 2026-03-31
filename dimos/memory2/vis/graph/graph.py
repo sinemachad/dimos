@@ -77,6 +77,12 @@ class GraphTime:
                 f.write(svg)
         return svg
 
+    def to_rerun(self, app_id: str = "graph_time", spawn: bool = True) -> None:
+        """Render to Rerun viewer."""
+        from dimos.memory2.vis.graph.rerun import render
+
+        render(self, app_id=app_id, spawn=spawn)
+
     def _repr_svg_(self) -> str:
         """Jupyter inline display."""
         return self.to_svg()

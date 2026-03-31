@@ -25,10 +25,28 @@ from dimos.memory2.embed import EmbedImages
 from dimos.memory2.store.sqlite import SqliteStore
 from dimos.memory2.transform import QualityWindow
 from dimos.models.embedding.clip import CLIPModel
+from dimos.msgs.geometry_msgs.Quaternion import Quaternion
+from dimos.msgs.geometry_msgs.Transform import Transform
+from dimos.msgs.geometry_msgs.Vector3 import Vector3
 from dimos.msgs.sensor_msgs.Image import Image
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
 from dimos.utils.data import get_data_dir
 from dimos.utils.testing.replay import TimedSensorReplay
+
+# GO2 camera extrinsics: base_link → camera_optical
+_BASE_TO_CAMERA_LINK = Transform(
+    translation=Vector3(0.3, 0.0, 0.0),
+    rotation=Quaternion(0.0, 0.0, 0.0, 1.0),
+    frame_id="base_link",
+    child_frame_id="camera_link",
+)
+_CAMERA_LINK_TO_OPTICAL = Transform(
+    translation=Vector3(0.0, 0.0, 0.0),
+    rotation=Quaternion(-0.5, 0.5, -0.5, 0.5),
+    frame_id="camera_link",
+    child_frame_id="camera_optical",
+)
+_BASE_TO_OPTICAL = _BASE_TO_CAMERA_LINK + _CAMERA_LINK_TO_OPTICAL
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -96,10 +114,16 @@ class TestImportReplay:
         with session.stream("color_image", Image) as video:
             count = 0
             for ts, frame in video_replay.iterate_ts():
-                pose = odom_index.find_closest(ts)
-                print("import", frame)
-                video.append(frame, ts=ts, pose=pose)
+                odom_pose = odom_index.find_closest(ts)
+                if odom_pose is None:
+                    continue
+                # Compose odom (world→base) with extrinsics (base→optical)
+                world_T_optical = Transform.from_pose("world", odom_pose) + _BASE_TO_OPTICAL
+                pose = world_T_optical.to_pose()
+                # Adjust video timestamps (-1s to align with odom)
+                video.append(frame, ts=ts - 1.0, pose=pose)
                 count += 1
+                print(f"import [{count}] ts={ts:.2f} {frame} pose={pose}")
 
             assert count > 0
             assert video.count() == count

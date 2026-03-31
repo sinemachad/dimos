@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from PIL import Image as PILImage
 
+from dimos.memory2.type.observation import EmbeddedObservation
 from dimos.memory2.vis.type import (
     Arrow,
     Box3D,
@@ -111,6 +112,10 @@ def _collect_bounds(el: Any, xs: list[float], ys: list[float]) -> None:
     elif isinstance(el, Text):
         xs.append(el.position[0])
         ys.append(el.position[1])
+    elif isinstance(el, EmbeddedObservation):
+        ps = el.pose_stamped
+        xs.append(ps.x)
+        ys.append(ps.y)
     elif isinstance(el, OccupancyGrid):
         ox, oy = el.origin.x, el.origin.y
         xs.extend([ox, ox + el.width * el.resolution])
@@ -317,6 +322,8 @@ def _render_element(el: SceneElement, vt: ViewTransform) -> str:
         return _render_text(el, vt)
     elif isinstance(el, OccupancyGrid):
         return _render_occupancy_grid(el, vt)
+    elif isinstance(el, EmbeddedObservation):
+        return _render_arrow(Arrow(msg=el.pose_stamped), vt)
     else:
         return f"<!-- unsupported: {type(el).__name__} -->"
 
