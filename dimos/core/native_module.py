@@ -55,7 +55,7 @@ from pydantic import Field
 
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
-from dimos.utils.change_detect import PathEntry, did_change
+from dimos.utils.change_detect import PathEntry, did_change, update_cache
 from dimos.utils.logging_config import setup_logger
 
 if sys.version_info < (3, 13):
@@ -317,8 +317,6 @@ class NativeModule(Module[_NativeConfig]):
         # Uses update_cache (not did_change) so we only write the hash after a
         # confirmed-good build — a failed build won't poison the cache.
         if self.config.rebuild_on_change:
-            from dimos.utils.change_detect import update_cache
-
             update_cache(
                 self._build_cache_name(), self.config.rebuild_on_change, cwd=self.config.cwd
             )
