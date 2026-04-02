@@ -80,11 +80,39 @@ def _rerun_blueprint() -> Any:
     )
 
 
+def _odometry_tf_override(odom: Any) -> Any:
+    """Publish odometry as a TF frame so sensor_scan/path/robot can reference it.
+
+    The z is zeroed because point clouds already have the full init_pose
+    transform applied (ground at z≈0). Using the raw odom.z (= mount height)
+    would double-count the vertical offset.
+    """
+    import rerun as rr
+
+    tf = rr.Transform3D(
+        translation=[odom.x, odom.y, 0.0],
+        rotation=rr.Quaternion(
+            xyzw=[
+                odom.orientation.x,
+                odom.orientation.y,
+                odom.orientation.z,
+                odom.orientation.w,
+            ]
+        ),
+        parent_frame="tf#/map",
+        child_frame="tf#/sensor",
+    )
+    return [
+        ("tf#/sensor", tf),
+    ]
+
+
 _rerun_config = {
     "blueprint": _rerun_blueprint,
     "pubsubs": [LCM()],
     "min_interval_sec": 0.25,
     "visual_override": {
+        "world/odometry": _odometry_tf_override,
         "world/sensor_scan": sensor_scan_override,
         "world/terrain_map": terrain_map_override,
         "world/terrain_map_ext": terrain_map_ext_override,
