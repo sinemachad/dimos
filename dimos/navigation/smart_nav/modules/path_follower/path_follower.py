@@ -60,8 +60,10 @@ class PathFollowerConfig(NativeModuleConfig):
     look_ahead_distance: float = 0.5
     # Maximum velocity the follower will command (m/s).
     max_speed: float = 2.0
-    # Maximum yaw rate for turning (rad/s).
-    max_yaw_rate: float = 1.5
+    # Maximum yaw rate for turning (deg/s).  The C++ binary converts to
+    # rad/s internally (``maxYawRate * PI / 180``).  Reference omniDir.yaml
+    # uses 80.0; default in C++ is 45.0.
+    max_yaw_rate: float = 80.0
 
     # --- Goal ---
 

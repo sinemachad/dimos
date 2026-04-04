@@ -26,6 +26,7 @@ from __future__ import annotations
 from typing import Any
 
 from dimos.core.blueprints import autoconnect
+from dimos.navigation.cmd_vel_mux import CmdVelMux
 from dimos.navigation.smart_nav.blueprints._rerun_helpers import (
     global_map_override,
     goal_path_override,
@@ -38,7 +39,6 @@ from dimos.navigation.smart_nav.blueprints._rerun_helpers import (
     waypoint_override,
 )
 from dimos.navigation.smart_nav.modules.click_to_goal.click_to_goal import ClickToGoal
-from dimos.navigation.cmd_vel_mux import CmdVelMux
 from dimos.navigation.smart_nav.modules.far_planner.far_planner import FarPlanner
 from dimos.navigation.smart_nav.modules.local_planner.local_planner import LocalPlanner
 from dimos.navigation.smart_nav.modules.path_follower.path_follower import PathFollower
@@ -143,11 +143,10 @@ _smart_nav = autoconnect(
         autonomy_speed=1.0,
         max_acceleration=2.0,
         slow_down_distance_threshold=0.2,
-        omni_dir_goal_threshold=0.0,  # disable strafing — turn to face heading
+        omni_dir_goal_threshold=0.5,
     ),
     FarPlanner.blueprint(
-        sensor_range=30.0,
-        visibility_range=25.0,
+        sensor_range=15.0,
     ),
     PGO.blueprint(),
     ClickToGoal.blueprint(),
@@ -173,7 +172,7 @@ _smart_nav = autoconnect(
 _smart_nav_sim = autoconnect(
     TerrainAnalysis.blueprint(
         obstacle_height_threshold=0.2,
-        max_relative_z=1.5,
+        max_relative_z=0.3,
     ),
     TerrainMapExt.blueprint(),
     LocalPlanner.blueprint(
@@ -181,20 +180,25 @@ _smart_nav_sim = autoconnect(
         max_speed=2.0,
         autonomy_speed=2.0,
         obstacle_height_threshold=0.2,
-        max_relative_z=1.5,
-        min_relative_z=-1.0,
+        # Match original VectorRobotics params: only consider obstacles in a
+        # narrow height band around the robot.  With maxRelZ=1.5 the planner
+        # sees walls from floor to ceiling and treats doorways as impassable.
+        max_relative_z=0.3,
+        min_relative_z=-0.4,
     ),
     PathFollower.blueprint(
         autonomy_mode=True,
         max_speed=2.0,
         autonomy_speed=2.0,
         max_acceleration=4.0,
-        slow_down_distance_threshold=0.2,
-        omni_dir_goal_threshold=0.0,  # disable strafing — turn to face heading
+        slow_down_distance_threshold=1.0,
+        # Reference omniDir.yaml: omniDirGoalThre=0.5  dirDiffThre=0.3
+        # Let the omni-dir G1 strafe when close to goal
+        omni_dir_goal_threshold=0.5,
     ),
     FarPlanner.blueprint(
-        sensor_range=30.0,
-        visibility_range=25.0,
+        sensor_range=15.0,
+        is_static_env=True,
     ),
     PGO.blueprint(),
     ClickToGoal.blueprint(),

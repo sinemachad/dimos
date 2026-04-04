@@ -27,9 +27,9 @@ class TestFarPlannerConfig:
     def test_default_config(self):
         config = FarPlannerConfig()
         assert config.visibility_range == 15.0
-        assert config.update_rate == 2.0
+        assert config.update_rate == 5.0
         assert config.robot_dimension == 0.5
-        assert config.sensor_range == 20.0
+        assert config.sensor_range == 15.0
 
     def test_cli_args_generation(self):
         config = FarPlannerConfig(

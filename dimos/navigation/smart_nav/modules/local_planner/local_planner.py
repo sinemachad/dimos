@@ -60,6 +60,8 @@ class LocalPlannerConfig(NativeModuleConfig):
         "max_relative_z": "maxRelZ",
         "min_relative_z": "minRelZ",
         "goal_clearance": "goalClearance",
+        "goal_reached_threshold": "goalReachedThreshold",
+        "goal_behind_range": "goalBehindRange",
         "goal_x": "goalX",
         "goal_y": "goalY",
     }
@@ -102,6 +104,10 @@ class LocalPlannerConfig(NativeModuleConfig):
 
     # Minimum clearance around goal position for path planning (m).
     goal_clearance: float = 0.5
+    # Distance from goal at which the local planner considers it reached (m).
+    goal_reached_threshold: float | None = None
+    # When goal is behind the robot and within this range, robot stops (m).
+    goal_behind_range: float | None = None
     # Goal x-coordinate in local frame (m). None = omit from CLI (binary default).
     goal_x: float | None = None
     # Goal y-coordinate in local frame (m). None = omit from CLI (binary default).
