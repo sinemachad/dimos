@@ -47,20 +47,24 @@ unitree_g1_nav_sim_simple = (
         SensorScanGeneration.blueprint(),
         smart_nav(
             use_simple_planner=True,
+            use_smooth_local_planner=True,
             terrain_analysis={
                 "obstacle_height_threshold": 0.1,
                 "ground_height_threshold": 0.05,
                 "max_relative_z": 0.3,
                 "min_relative_z": -1.5,
             },
-            local_planner={
-                "max_speed": 2.0,
-                "autonomy_speed": 2.0,
+            smooth_local_planner={
+                "max_curvature": 1.2,
+                "arc_length": 3.0,
+                "obstacle_range": 3.5,
+                "robot_radius": 0.35,
                 "obstacle_height_threshold": 0.1,
                 "max_relative_z": 0.3,
                 "min_relative_z": -1.5,
-                "freeze_ang": 180.0,
-                "two_way_drive": False,
+                "curvature_ema_alpha": 0.3,
+                "publish_rate": 20.0,
+                "publish_length": 3.0,
             },
             path_follower={
                 "max_speed": 2.0,

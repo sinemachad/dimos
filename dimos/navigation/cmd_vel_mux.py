@@ -97,12 +97,6 @@ class CmdVelMux(Module[CmdVelMuxConfig]):
         self.cmd_vel.publish(msg)
 
     def _on_teleop(self, msg: Twist) -> None:
-        # Ignore zero-velocity messages — they indicate key release, not
-        # active teleop.  Only non-zero commands should suppress nav and
-        # publish stop_movement.
-        if msg.is_zero():
-            return
-
         was_active: bool
         with self._lock:
             was_active = self._teleop_active
