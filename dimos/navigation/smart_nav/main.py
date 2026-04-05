@@ -200,6 +200,7 @@ def smart_nav(
         (FarPlanner, "odometry", "corrected_odometry"),
         (ClickToGoal, "odometry", "corrected_odometry"),
         (TerrainAnalysis, "odometry", "corrected_odometry"),
+        (PGO, "global_map", "global_map_pgo"),
     ]
     if use_tare:
         # TARE drives way_point; disconnect ClickToGoal's output to avoid conflict.
