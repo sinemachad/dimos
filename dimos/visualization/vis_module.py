@@ -17,8 +17,8 @@
 
 from typing import Any
 
-from dimos.core.blueprints import Blueprint, autoconnect
-from dimos.core.global_config import ViewerBackend
+from dimos.core.coordination.blueprints import Blueprint, autoconnect
+from dimos.visualization.constants import ViewerBackend
 
 
 def vis_module(
