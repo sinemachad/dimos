@@ -26,10 +26,15 @@ from typing import Any
 from dimos.core.native_module import NativeModule, NativeModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs.PointStamped import PointStamped
+from dimos.msgs.geometry_msgs.PolygonStamped import PolygonStamped
+from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.geometry_msgs.Twist import Twist
 from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.nav_msgs.Path import Path as NavPath
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
+from dimos.msgs.std_msgs.Bool import Bool
+from dimos.msgs.std_msgs.Float32 import Float32
+from dimos.msgs.std_msgs.Int8 import Int8
 from dimos.utils.data import get_data
 
 
@@ -49,7 +54,7 @@ class LocalPlannerConfig(NativeModuleConfig):
     executable: str = "result/bin/local_planner"
     # build_command: str | None = "nix build --no-write-lock-file"
     build_command: str | None = (
-        "nix build github:dimensionalOS/dimos-module-local-planner/v0.3.0 --no-write-lock-file"
+        "nix build github:dimensionalOS/dimos-module-local-planner/v0.3.1 --no-write-lock-file"
     )
     rebuild_on_change: list[str] = ["main.cpp"]  # type: ignore[assignment]
 
@@ -245,9 +250,21 @@ class LocalPlanner(NativeModule):
 
     default_config: type[LocalPlannerConfig] = LocalPlannerConfig  # type: ignore[assignment]
 
+    # --- Inputs ---
     registered_scan: In[PointCloud2]
     odometry: In[Odometry]
     terrain_map: In[PointCloud2]
     joy_cmd: In[Twist]
     way_point: In[PointStamped]
+    goal_pose: In[PoseStamped]
+    speed: In[Float32]
+    navigation_boundary: In[PolygonStamped]
+    added_obstacles: In[PointCloud2]
+    check_obstacle: In[Bool]
+    cancel_goal: In[Bool]
+
+    # --- Outputs ---
     path: Out[NavPath]
+    free_paths: Out[PointCloud2]
+    slow_down: Out[Int8]
+    goal_reached: Out[Bool]

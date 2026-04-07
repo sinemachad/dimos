@@ -211,6 +211,7 @@ def smart_nav(
 
 # ─── Rerun visual overrides (robot-agnostic) ─────────────────────────────────
 
+
 def smart_nav_rerun_config(
     user_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -237,6 +238,7 @@ def smart_nav_rerun_config(
     visual_override.setdefault("world/path", _path_override)
     visual_override.setdefault("world/way_point", _waypoint_override)
     visual_override.setdefault("world/goal_path", _goal_path_override)
+    visual_override.setdefault("world/free_paths", _free_paths_override)
     resolved["visual_override"] = visual_override
     static_entries = dict(resolved["static"])
     static_entries.setdefault("world/floor", _static_floor)
@@ -368,6 +370,16 @@ def _waypoint_override(msg: Any) -> Any:
         colors=[(255, 50, 50)],
         radii=0.3,
     )
+
+
+def _free_paths_override(cloud: Any) -> Any:
+    """Render LocalPlanner free (collision-free) candidate paths in vehicle frame."""
+    import rerun as rr
+
+    return [
+        ("world/free_paths", rr.Transform3D(parent_frame="tf#/sensor")),
+        ("world/free_paths", cloud.to_rerun(colormap="cool", size=0.02)),
+    ]
 
 
 def _static_floor(rr: Any) -> list[Any]:
