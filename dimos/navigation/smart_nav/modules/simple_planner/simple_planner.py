@@ -102,7 +102,7 @@ class Costmap:
         blocked: set[tuple[int, int]] = set()
         # Inflation: the number of cells that lie within inflation_radius.
         r_cells = math.ceil(self.inflation_radius / self.cell_size)
-        for (ix, iy), h in self._heights.items():
+        for (ix, iy), h in list(self._heights.items()):
             if h < self.obstacle_height:
                 continue
             if r_cells == 0:
@@ -147,7 +147,7 @@ def _blocked_at_inflation(cm: Costmap, inflation_radius: float) -> set[tuple[int
     r_cells = math.ceil(inflation_radius / cell)
     max_sq = (inflation_radius / cell) ** 2 if r_cells else 0.0
     blocked: set[tuple[int, int]] = set()
-    for (ix, iy), h in cm._heights.items():
+    for (ix, iy), h in list(cm._heights.items()):
         if h < threshold:
             continue
         if r_cells == 0:
