@@ -58,7 +58,7 @@ from pydantic import Field
 from dimos.constants import DEFAULT_THREAD_JOIN_TIMEOUT
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
-from dimos.utils.change_detect import PathEntry, did_change
+from dimos.utils.change_detect import PathEntry, did_change, update_cache
 from dimos.utils.logging_config import setup_logger
 
 if sys.version_info < (3, 13):
@@ -405,6 +405,7 @@ class NativeModule(Module):
                 self.config.rebuild_on_change,
                 cwd=self.config.cwd,
                 extra_hash=self.config.build_command,
+                update=False,
             ):
                 logger.info("Source files changed, triggering rebuild", executable=str(exe))
                 needs_rebuild = True
@@ -464,7 +465,7 @@ class NativeModule(Module):
         # Seed the cache after a successful build so the next check has a baseline
         # (needed for the initial build when the pre-build change check was skipped)
         if self.config.rebuild_on_change:
-            did_change(
+            update_cache(
                 self._build_cache_name(),
                 self.config.rebuild_on_change,
                 cwd=self.config.cwd,

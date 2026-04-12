@@ -360,8 +360,17 @@ def clear_cache(cache_name: str) -> bool:
         clear_cache("my_build")
         did_change("my_build", ["/src/main.c"])  # always True after clear
     """
-    cache_file = _get_cache_dir() / f"{_safe_filename(cache_name)}.hash"
-    if cache_file.exists():
-        cache_file.unlink()
-        return True
-    return False
+    cache_dir = _get_cache_dir()
+    cache_file = cache_dir / f"{_safe_filename(cache_name)}.hash"
+    lock_file = cache_dir / f"{_safe_filename(cache_name)}.lock"
+
+    thread_lock = _get_thread_lock(cache_name)
+    with thread_lock, open(lock_file, "w") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            if cache_file.exists():
+                cache_file.unlink()
+                return True
+            return False
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)

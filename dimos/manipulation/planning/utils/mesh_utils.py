@@ -84,7 +84,10 @@ def prepare_urdf_for_drake(
             "convert_meshes": convert_meshes,
         }
     )
-    cache_path = _CACHE_DIR / f"v3_{hash_paths([str(urdf_path)])}_{config_hash}" / urdf_path.stem
+    _urdf_hash = hash_paths([str(urdf_path)])
+    if _urdf_hash is None:
+        raise FileNotFoundError(f"URDF file not found or unreadable: {urdf_path}")
+    cache_path = _CACHE_DIR / f"v3_{_urdf_hash}_{config_hash}" / urdf_path.stem
     cache_path.mkdir(parents=True, exist_ok=True)
     cached_urdf = cache_path / f"{urdf_path.stem}.urdf"
 
