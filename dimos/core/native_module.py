@@ -146,6 +146,7 @@ class NativeModule(Module):
     _stderr_tail: list[str]
     _stdout_tail: list[str]
     _tail_lock: threading.Lock
+    _tail_size = 50
 
     @property
     def _mod_label(self) -> str:
@@ -155,8 +156,8 @@ class NativeModule(Module):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._stderr_tail: collections.deque[str] = collections.deque(maxlen=50)
-        self._stdout_tail: collections.deque[str] = collections.deque(maxlen=50)
+        self._stderr_tail: collections.deque[str] = collections.deque(maxlen=self._tail_size)
+        self._stdout_tail: collections.deque[str] = collections.deque(maxlen=self._tail_size)
         self._tail_lock = threading.Lock()
         self._resolve_paths()
 
@@ -194,19 +195,23 @@ class NativeModule(Module):
             cmd=" ".join(cmd),
             cwd=cwd,
         )
+        # fix bad-close and leaked process issues
         def _child_preexec() -> None:
-            """Ensure child is killed when parent dies (Linux only)."""
+            """Ensure child is killed when parent dies, and isolate from terminal signals."""
             import os as _os
 
-            try:
+            # PR_SET_PDEATHSIG is Linux-only. macOS has no equivalent, so we
+            # skip it there instead of swallowing the libc load failure.
+            if sys.platform.startswith("linux"):
                 import ctypes
 
                 PR_SET_PDEATHSIG = 1
                 libc = ctypes.CDLL("libc.so.6", use_errno=True)
-                libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
-            except Exception:
-                pass
-            # Also start a new session so terminal SIGINT doesn't reach child.
+                if libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM) != 0:
+                    err = ctypes.get_errno()
+                    raise OSError(err, f"prctl(PR_SET_PDEATHSIG) failed: {_os.strerror(err)}")
+
+            # Start a new session so terminal SIGINT doesn't reach child.
             _os.setsid()
 
         self._process = subprocess.Popen(
@@ -242,7 +247,7 @@ class NativeModule(Module):
             )
             self._process.send_signal(signal.SIGTERM)
             try:
-                self._process.wait(timeout=self.config.shutdown_timeout)
+                self._process.wait(timeout=DEFAULT_THREAD_JOIN_TIMEOUT)
             except subprocess.TimeoutExpired:
                 logger.warning(
                     "Native process did not exit, sending SIGKILL",
@@ -250,7 +255,7 @@ class NativeModule(Module):
                     pid=self._process.pid,
                 )
                 self._process.kill()
-                self._process.wait(timeout=5)
+                self._process.wait(timeout=DEFAULT_THREAD_JOIN_TIMEOUT)
         if self._watchdog is not None and self._watchdog is not threading.current_thread():
             self._watchdog.join(timeout=DEFAULT_THREAD_JOIN_TIMEOUT)
         self._watchdog = None
@@ -259,12 +264,16 @@ class NativeModule(Module):
 
     def _watch_process(self) -> None:
         """Block until the native process exits; trigger stop() if it crashed."""
-        if self._process is None:
+        # Cache the Popen reference and pid locally so a concurrent stop()
+        # setting self._process = None can't race us into an AttributeError.
+        proc = self._process
+        if proc is None:
             return
+        pid = proc.pid
 
-        stdout_t = self._start_reader(self._process.stdout, "info", self._stdout_tail)
-        stderr_t = self._start_reader(self._process.stderr, "warning", self._stderr_tail)
-        rc = self._process.wait()
+        stdout_t = self._start_reader(proc.stdout, "info", self._stdout_tail)
+        stderr_t = self._start_reader(proc.stderr, "warning", self._stderr_tail)
+        rc = proc.wait()
         stdout_t.join(timeout=DEFAULT_THREAD_JOIN_TIMEOUT)
         stderr_t.join(timeout=DEFAULT_THREAD_JOIN_TIMEOUT)
 
@@ -272,7 +281,7 @@ class NativeModule(Module):
             logger.info(
                 "Native process exited (expected)",
                 module=self._mod_label,
-                pid=self._process.pid,
+                pid=pid,
                 returncode=rc,
             )
             return
@@ -285,8 +294,9 @@ class NativeModule(Module):
         logger.error(
             "Native process died unexpectedly",
             module=self._mod_label,
-            pid=self._process.pid,
+            pid=pid,
             returncode=rc,
+            last_stderr="\n".join(stderr_snapshot)[:500] if stderr_snapshot else None,
         )
 
         # Log the last stderr/stdout lines so the cause is visible.
@@ -294,7 +304,7 @@ class NativeModule(Module):
             logger.error(
                 f"Last {len(stderr_snapshot)} stderr lines from {self._mod_label}:",
                 module=self._mod_label,
-                pid=self._process.pid,
+                pid=pid,
             )
             for line in stderr_snapshot:
                 logger.error(f"  stderr| {line}", module=self._mod_label)
@@ -304,7 +314,7 @@ class NativeModule(Module):
             logger.error(
                 f"Last {len(stdout_snapshot)} stdout lines from {self._mod_label}:",
                 module=self._mod_label,
-                pid=self._process.pid,
+                pid=pid,
             )
             for line in stdout_snapshot:
                 logger.error(f"  stdout| {line}", module=self._mod_label)
@@ -314,7 +324,7 @@ class NativeModule(Module):
                 "No output captured from native process — "
                 "binary may have crashed before producing any output",
                 module=self._mod_label,
-                pid=self._process.pid,
+                pid=pid,
             )
 
         self.stop()
@@ -323,7 +333,7 @@ class NativeModule(Module):
         self,
         stream: IO[bytes] | None,
         level: str,
-        tail_buf: list[str],
+        tail_buf: collections.deque[str],
     ) -> threading.Thread:
         """Spawn a daemon thread that pipes a subprocess stream through the logger."""
         t = threading.Thread(
@@ -339,7 +349,7 @@ class NativeModule(Module):
         self,
         stream: IO[bytes] | None,
         level: str,
-        tail_buf: list[str],
+        tail_buf: collections.deque[str],
     ) -> None:
         if stream is None:
             return

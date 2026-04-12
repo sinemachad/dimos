@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from dimos.utils.change_detect import Glob, clear_cache, did_change
+from dimos.utils.change_detect import Glob, clear_cache, did_change, update_cache
 
 
 @pytest.fixture(autouse=True)
@@ -116,11 +116,20 @@ def test_empty_paths_returns_false() -> None:
     assert did_change("empty_test", []) is False
 
 
-def test_nonexistent_path_warns(caplog: pytest.LogCaptureFixture) -> None:
-    """A non-existent absolute path logs a warning and doesn't crash."""
+def test_nonexistent_path_warns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-existent absolute path logs a warning and returns False (no files → skip rebuild)."""
+    warnings: list[tuple[str, dict]] = []
+
+    def fake_warning(msg: str, **kwargs: object) -> None:
+        warnings.append((msg, dict(kwargs)))
+
+    monkeypatch.setattr("dimos.utils.change_detect.logger.warning", fake_warning)
     result = did_change("missing_test", ["/nonexistent/path/to/file.c"])
-    # No resolvable files → returns False (skip rebuild)
     assert result is False
+    assert any(
+        "does not exist" in msg.lower() and kw.get("path") == "/nonexistent/path/to/file.c"
+        for msg, kw in warnings
+    ), f"expected 'Path does not exist' warning, got: {warnings}"
 
 
 def test_relative_path_without_cwd_raises() -> None:
@@ -133,3 +142,33 @@ def test_relative_path_with_cwd(src_dir: Path) -> None:
     """Relative paths should resolve against the provided cwd."""
     assert did_change("cwd_test", ["src/a.c"], cwd=src_dir.parent) is True
     assert did_change("cwd_test", ["src/a.c"], cwd=src_dir.parent) is False
+
+
+def test_update_false_does_not_write_cache(src_dir: Path) -> None:
+    """With update=False, repeated calls keep returning True (cache not updated)."""
+    paths = [str(src_dir)]
+    assert did_change("no_update", paths, update=False) is True
+    # Cache was not written, so still reports changed
+    assert did_change("no_update", paths, update=False) is True
+    # Now update explicitly
+    update_cache("no_update", paths)
+    # Cache is current, no change
+    assert did_change("no_update", paths, update=False) is False
+
+
+def test_update_cache_after_build(src_dir: Path) -> None:
+    """Simulates the build workflow: check without update, build, then update."""
+    paths = [str(src_dir)]
+    # First check — no cache yet
+    assert did_change("build_test", paths, update=False) is True
+    # Simulate successful build → update cache
+    update_cache("build_test", paths)
+    # No changes since update
+    assert did_change("build_test", paths, update=False) is False
+    # Modify a file
+    (src_dir / "a.c").write_text("int main() { return 42; }")
+    # Now detects the change
+    assert did_change("build_test", paths, update=False) is True
+    # Simulate failed build — don't call update_cache
+    # Next check still sees the change
+    assert did_change("build_test", paths, update=False) is True
