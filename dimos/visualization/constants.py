@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dimos.core.coordination.blueprints import autoconnect
-from dimos.hardware.sensors.lidar.livox.module import Mid360
-from dimos.visualization.vis_module import vis_module
+from typing import Literal, TypeAlias
 
-mid360 = autoconnect(
-    Mid360.blueprint(),
-    vis_module("rerun"),
-).global_config(n_workers=2, robot_model="mid360")
+ViewerBackend: TypeAlias = Literal["rerun", "foxglove", "none"]
+RerunOpenOption: TypeAlias = Literal["none", "web", "native", "both"]
+
+RERUN_OPEN_DEFAULT: RerunOpenOption = "native"
+RERUN_ENABLE_WEB = True
+RERUN_GRPC_PORT = 9876
+RERUN_WEB_PORT = 9090
