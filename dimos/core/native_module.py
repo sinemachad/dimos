@@ -143,8 +143,8 @@ class NativeModule(Module):
     _process: subprocess.Popen[bytes] | None = None
     _watchdog: threading.Thread | None = None
     _stopping: bool = False
-    _stderr_tail: list[str]
-    _stdout_tail: list[str]
+    _stderr_tail: collections.deque[str]
+    _stdout_tail: collections.deque[str]
     _tail_lock: threading.Lock
     _tail_size = 50
 
@@ -196,24 +196,20 @@ class NativeModule(Module):
             cwd=cwd,
         )
 
-        # fix bad-close and leaked process issues
-        def _child_preexec() -> None:
-            """Ensure child is killed when parent dies, and isolate from terminal signals."""
-            import os as _os
+        # fix bad-close and leaked process issues.
+        # start_new_session=True is the thread-safe way to isolate the child
+        # from terminal signals (SIGINT from the tty).  preexec_fn is unsafe
+        # in the presence of threads (subprocess docs), so we only use it on
+        # Linux where prctl(PR_SET_PDEATHSIG) has no alternative.
+        def _child_preexec_linux() -> None:
+            """Kill child when parent dies. Linux only."""
+            import ctypes
 
-            # PR_SET_PDEATHSIG is Linux-only. macOS has no equivalent, so we
-            # skip it there instead of swallowing the libc load failure.
-            if sys.platform.startswith("linux"):
-                import ctypes
-
-                PR_SET_PDEATHSIG = 1
-                libc = ctypes.CDLL("libc.so.6", use_errno=True)
-                if libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM) != 0:
-                    err = ctypes.get_errno()
-                    raise OSError(err, f"prctl(PR_SET_PDEATHSIG) failed: {_os.strerror(err)}")
-
-            # Start a new session so terminal SIGINT doesn't reach child.
-            _os.setsid()
+            PR_SET_PDEATHSIG = 1
+            libc = ctypes.CDLL("libc.so.6", use_errno=True)
+            if libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM) != 0:
+                err = ctypes.get_errno()
+                raise OSError(err, f"prctl(PR_SET_PDEATHSIG) failed: {os.strerror(err)}")
 
         self._process = subprocess.Popen(
             cmd,
@@ -221,7 +217,8 @@ class NativeModule(Module):
             cwd=cwd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            preexec_fn=_child_preexec,
+            start_new_session=True,
+            preexec_fn=_child_preexec_linux if sys.platform.startswith("linux") else None,
         )
         logger.info(
             "Native process started",
@@ -391,7 +388,7 @@ class NativeModule(Module):
     def _build_cache_name(self) -> str:
         """Return a stable, unique cache name for this module's build state."""
         source_file = Path(inspect.getfile(type(self))).resolve()
-        return f"native_{source_file}"
+        return f"native_{type(self).__name__}_{source_file}"
 
     def _maybe_build(self) -> None:
         """Run ``build_command`` if the executable does not exist or sources changed."""

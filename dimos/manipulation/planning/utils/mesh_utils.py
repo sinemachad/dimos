@@ -72,7 +72,7 @@ def prepare_urdf_for_drake(
     Returns:
         Path to the prepared URDF file (may be cached)
     """
-    urdf_path = Path(urdf_path)
+    urdf_path = Path(urdf_path).resolve()
     package_paths = package_paths or {}
     xacro_args = xacro_args or {}
 

@@ -361,6 +361,7 @@ def clear_cache(cache_name: str) -> bool:
         did_change("my_build", ["/src/main.c"])  # always True after clear
     """
     cache_dir = _get_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file = cache_dir / f"{_safe_filename(cache_name)}.hash"
     lock_file = cache_dir / f"{_safe_filename(cache_name)}.lock"
 
