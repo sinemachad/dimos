@@ -51,8 +51,8 @@ PATCH_DIR = Path(__file__).parent / "_patches"
 # Lower T = more context switches. With ~10 LCM services and T=50ms, that's
 # ~200 wakeups/sec of pure overhead.
 # Safe range: 20 - 500 ms. Above ~500ms, RPC latency becomes visible.
-ENABLE_LCM_TIMEOUT = True
-LCM_LOOP_TIMEOUT_MS = 500  # upstream default = 50
+ENABLE_LCM_TIMEOUT = False
+LCM_LOOP_TIMEOUT_MS = 50  # upstream default = 50
 
 
 # ------------------------------------------------------------------
@@ -187,6 +187,14 @@ ENABLE_REPLAY_SPEED = True
 REPLAY_SPEED = 100.0
 
 
+# ------------------------------------------------------------------
+# KNOB 15: Skip video autocast
+# ------------------------------------------------------------------
+# Video stream runs _autocast_video per frame (VideoFrame→ndarray→Image).
+# Expensive per-frame numpy conversion. Nobody consumes it during bench.
+ENABLE_SKIP_VIDEO_AUTOCAST = False
+
+
 def _build_startup_code() -> str:
     """Assemble the monkey-patch string injected via sitecustomize.py."""
     lines: list[str] = []
@@ -249,6 +257,9 @@ def apply() -> dict:
 
     if ENABLE_REPLAY_SPEED:
         env["DIMOS_REPLAY_SPEED"] = str(REPLAY_SPEED)
+
+    if ENABLE_SKIP_VIDEO_AUTOCAST:
+        env["DIMOS_SKIP_VIDEO_AUTOCAST"] = "1"
 
     startup_code = _build_startup_code()
     if startup_code:
