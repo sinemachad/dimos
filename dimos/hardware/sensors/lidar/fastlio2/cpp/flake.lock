@@ -98,6 +98,9 @@
         "flake-utils": [
           "flake-utils"
         ],
+        "lcm-extended": [
+          "lcm-extended"
+        ],
         "nixpkgs": [
           "nixpkgs"
         ]
