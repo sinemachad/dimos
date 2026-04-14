@@ -21,7 +21,6 @@ from typing import Any
 from dimos.constants import DEFAULT_CAPACITY_COLOR_IMAGE
 from dimos.core.coordination.blueprints import autoconnect
 from dimos.core.global_config import global_config
-from dimos.msgs.sensor_msgs.Image import Image
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.robot.unitree.go2.connection import GO2Connection
 
@@ -38,6 +37,7 @@ if platform.system() == "Linux":
     _transports_base = autoconnect()
 else:
     from dimos.core.transport import pSHMTransport
+    from dimos.msgs.sensor_msgs.Image import Image
     _mac_transports: dict[tuple[str, type], pSHMTransport[Image]] = {
         ("color_image", Image): pSHMTransport(
             "color_image", default_capacity=DEFAULT_CAPACITY_COLOR_IMAGE
