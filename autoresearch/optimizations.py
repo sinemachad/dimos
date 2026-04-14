@@ -184,7 +184,7 @@ ENABLE_SKIP_ROBOT_INIT = True
 # wall time = less idle polling overhead. Fixed work still processed fully.
 # Controlled via env var DIMOS_REPLAY_SPEED=<float>.
 ENABLE_REPLAY_SPEED = True
-REPLAY_SPEED = 10.0
+REPLAY_SPEED = 100.0
 
 
 def _build_startup_code() -> str:
