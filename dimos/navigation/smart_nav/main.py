@@ -37,10 +37,9 @@ from dimos.core.module import ModuleBase
 from dimos.spec.utils import Spec
 
 logger = logging.getLogger(__name__)
-from dimos.navigation.cmd_vel_mux import CmdVelMux
-from dimos.navigation.smart_nav.modules.click_to_goal.click_to_goal import ClickToGoal
 from dimos.navigation.smart_nav.modules.far_planner.far_planner import FarPlanner
 from dimos.navigation.smart_nav.modules.local_planner.local_planner import LocalPlanner
+from dimos.navigation.smart_nav.modules.movement_manager.movement_manager import MovementManager
 from dimos.navigation.smart_nav.modules.path_follower.path_follower import PathFollower
 from dimos.navigation.smart_nav.modules.pgo.pgo import PGO
 from dimos.navigation.smart_nav.modules.simple_planner.simple_planner import SimplePlanner
@@ -63,7 +62,7 @@ def smart_nav(
     far_planner: dict[str, Any] | None = None,
     simple_planner: dict[str, Any] | None = None,
     pgo: dict[str, Any] | None = None,
-    click_to_goal: dict[str, Any] | None = None,
+    movement_manager: dict[str, Any] | None = None,
     cmd_vel_mux: dict[str, Any] | None = None,
     tare_planner: dict[str, Any] | None = None,
 ) -> Blueprint:
@@ -201,8 +200,7 @@ def smart_nav(
             else [FarPlanner.blueprint(**(far_planner or {}))]
         ),
         PGO.blueprint(**(pgo or {})),
-        ClickToGoal.blueprint(**(click_to_goal or {})),
-        CmdVelMux.blueprint(**(cmd_vel_mux or {})),
+        MovementManager.blueprint(**(movement_manager or cmd_vel_mux or {})),
     ]
     if use_terrain_map_ext:
         modules.append(
@@ -226,7 +224,7 @@ def smart_nav(
         modules.append(TarePlanner.blueprint(**(tare_planner or {})))
 
     remappings: list[tuple[type[ModuleBase], str, str | type[ModuleBase] | type[Spec]]] = [
-        # PathFollower cmd_vel → CmdVelMux nav input (avoid collision with mux output)
+        # PathFollower cmd_vel → MovementManager nav input (avoid collision with mux output)
         (PathFollower, "cmd_vel", "nav_cmd_vel"),
         # Global-scale planners use PGO-corrected odometry (per CMU ICRA 2022):
         # loop-closure adjustments go to high-level planners; local modules
@@ -236,10 +234,10 @@ def smart_nav(
             "odometry",
             "corrected_odometry",
         ),
-        (ClickToGoal, "odometry", "corrected_odometry"),
+        (MovementManager, "odometry", "corrected_odometry"),
         (TerrainAnalysis, "odometry", "corrected_odometry"),
-        # FAR (or TARE) owns way_point — disconnect ClickToGoal's output.
-        (ClickToGoal, "way_point", "_click_way_point_unused"),
+        # Planner owns way_point — disconnect MovementManager's click relay.
+        (MovementManager, "way_point", "_mgr_way_point_unused"),
         (PGO, "global_map", "global_map_pgo"),
     ]
 
@@ -251,12 +249,20 @@ def smart_nav(
 
 def smart_nav_rerun_config(
     user_config: dict[str, Any] | None = None,
+    *,
+    agentic_debug: bool = False,
 ) -> dict[str, Any]:
     """Return a rerun config dict with SmartNav defaults filled in via setdefault.
 
     The caller's entries win — this just ensures missing keys (blueprint,
     pubsubs, visual_override entries, static entries) are
     populated with the SmartNav defaults.
+
+    Args:
+        agentic_debug: When True, elevate nav paths, goals, and waypoints high
+            above the scene so they're visible even when occluded by
+            terrain/obstacles.  Useful for debugging planner behavior from a
+            top-down view.
     """
     resolved = dict(user_config or {})
     resolved.setdefault("blueprint", _default_rerun_blueprint)
@@ -272,10 +278,16 @@ def smart_nav_rerun_config(
     visual_override.setdefault("world/preloaded_map", _preloaded_map_override)
     visual_override.setdefault("world/trajectory", _trajectory_override)
     visual_override.setdefault("world/path", _path_override)
-    visual_override.setdefault("world/way_point", _waypoint_override)
-    visual_override.setdefault("world/goal", _goal_override)
-    visual_override.setdefault("world/goal_path", _goal_path_override)
-    visual_override.setdefault("world/nav_boundary", _nav_boundary_override)
+    if agentic_debug:
+        visual_override.setdefault("world/way_point", _waypoint_override_debug)
+        visual_override.setdefault("world/goal", _goal_override_debug)
+        visual_override.setdefault("world/goal_path", _goal_path_override_debug)
+        visual_override.setdefault("world/nav_boundary", _nav_boundary_override_debug)
+    else:
+        visual_override.setdefault("world/way_point", _waypoint_override)
+        visual_override.setdefault("world/goal", _goal_override)
+        visual_override.setdefault("world/goal_path", _goal_path_override)
+        visual_override.setdefault("world/nav_boundary", _nav_boundary_override)
     visual_override.setdefault("world/obstacle_cloud", _obstacle_cloud_override)
     visual_override.setdefault("world/costmap_cloud", _costmap_cloud_override)
     visual_override.setdefault("world/free_paths", _free_paths_override)
@@ -284,6 +296,18 @@ def smart_nav_rerun_config(
     static_entries.setdefault("world/floor", _static_floor)
     resolved["static"] = static_entries
     return resolved
+
+
+# Z-offsets for Rerun visualization (metres above the data's actual z).
+# Small lifts prevent z-fighting with the terrain/floor plane.
+_VIS_LIFT = 0.3  # default lift for nav markers (goals, paths, boundaries)
+_VIS_LIFT_TRAJECTORY = 0.05  # trajectory breadcrumbs sit just above the floor
+
+# Agentic debug mode lifts nav elements high above the scene so they're
+# visible from a top-down camera even when terrain occludes them.
+_AGENTIC_DEBUG_LIFT = 3.0
+_AGENTIC_DEBUG_PATH_LIFT = _AGENTIC_DEBUG_LIFT + 0.4  # path slightly above goal markers
+_AGENTIC_DEBUG_BOUNDARY_LIFT = _AGENTIC_DEBUG_LIFT - 1.0  # boundary below markers
 
 
 def _default_rerun_blueprint() -> Any:
@@ -379,7 +403,7 @@ def _trajectory_override(cloud: Any) -> Any:
     points, _ = cloud.as_numpy()
     if len(points) < 2:
         return None
-    pts = [[float(p[0]), float(p[1]), float(p[2]) + 0.05] for p in points]
+    pts = [[float(p[0]), float(p[1]), float(p[2]) + _VIS_LIFT_TRAJECTORY] for p in points]
     return [
         ("world/trajectory/line", rr.LineStrips3D([pts], colors=[(0, 200, 255)], radii=0.03)),
         ("world/trajectory/nodes", rr.Points3D(pts, colors=[(0, 150, 255)], radii=0.05)),
@@ -398,7 +422,7 @@ def _path_override(path_msg: Any) -> Any:
     if not path_msg.poses:
         return None
 
-    points = [[p.x, p.y, p.z + 0.3] for p in path_msg.poses]
+    points = [[p.x, p.y, p.z + _VIS_LIFT] for p in path_msg.poses]
     return [
         ("world/nav_path", rr.Transform3D(parent_frame="tf#/sensor")),
         ("world/nav_path", rr.LineStrips3D([points], colors=[(0, 255, 128)], radii=0.05)),
@@ -406,8 +430,8 @@ def _path_override(path_msg: Any) -> Any:
 
 
 def _nav_boundary_override(msg: Any) -> Any:
-    """Render navigation boundary: cyan edges at z=2.0 (above contours, below goal path)."""
-    return msg.to_rerun(z_offset=2.0, color=(0, 220, 255, 200), radii=0.05)
+    """Render navigation boundary as cyan edges."""
+    return msg.to_rerun(z_offset=_VIS_LIFT, color=(0, 220, 255, 200), radii=0.05)
 
 
 def _goal_path_override(path_msg: Any) -> Any:
@@ -417,8 +441,7 @@ def _goal_path_override(path_msg: Any) -> Any:
     if not path_msg.poses or len(path_msg.poses) < 2:
         return None
 
-    z_off = 3.4  # above graph edges (1.7) and contour polygons (1.5)
-    points = [[p.x, p.y, p.z + z_off] for p in path_msg.poses]
+    points = [[p.x, p.y, p.z + _VIS_LIFT] for p in path_msg.poses]
     return [
         # Edges: orange line connecting all waypoints
         ("world/goal_path/edges", rr.LineStrips3D([points], colors=[(255, 140, 0)], radii=0.06)),
@@ -437,7 +460,7 @@ def _waypoint_override(msg: Any) -> Any:
         return None
 
     return rr.Points3D(
-        positions=[[msg.x, msg.y, msg.z + 3.0]],
+        positions=[[msg.x, msg.y, msg.z + _VIS_LIFT]],
         colors=[(255, 50, 50)],
         radii=0.4,
     )
@@ -453,7 +476,7 @@ def _goal_override(msg: Any) -> Any:
         return None
 
     return rr.Points3D(
-        positions=[[msg.x, msg.y, msg.z + 3.0]],
+        positions=[[msg.x, msg.y, msg.z + _VIS_LIFT]],
         colors=[(180, 60, 220)],
         radii=0.6,
     )
@@ -480,3 +503,57 @@ def _static_floor(rr: Any) -> list[Any]:
             vertex_colors=[[40, 40, 40, 120]] * 4,
         )
     ]
+
+
+# ─── Debug overrides (elevated paths for top-down debugging) ─────────────────
+
+
+def _waypoint_override_debug(msg: Any) -> Any:
+    """Agentic debug: waypoint elevated above the scene."""
+    import math
+
+    import rerun as rr
+
+    if not all(math.isfinite(v) for v in (msg.x, msg.y, msg.z)):
+        return None
+
+    return rr.Points3D(
+        positions=[[msg.x, msg.y, msg.z + _AGENTIC_DEBUG_LIFT]],
+        colors=[(255, 50, 50)],
+        radii=0.4,
+    )
+
+
+def _goal_override_debug(msg: Any) -> Any:
+    """Agentic debug: goal elevated above the scene."""
+    import math
+
+    import rerun as rr
+
+    if not all(math.isfinite(v) for v in (msg.x, msg.y, msg.z)):
+        return None
+
+    return rr.Points3D(
+        positions=[[msg.x, msg.y, msg.z + _AGENTIC_DEBUG_LIFT]],
+        colors=[(180, 60, 220)],
+        radii=0.6,
+    )
+
+
+def _goal_path_override_debug(path_msg: Any) -> Any:
+    """Agentic debug: goal path elevated above the scene."""
+    import rerun as rr
+
+    if not path_msg.poses or len(path_msg.poses) < 2:
+        return None
+
+    points = [[p.x, p.y, p.z + _AGENTIC_DEBUG_PATH_LIFT] for p in path_msg.poses]
+    return [
+        ("world/goal_path/edges", rr.LineStrips3D([points], colors=[(255, 140, 0)], radii=0.06)),
+        ("world/goal_path/nodes", rr.Points3D(points, colors=[(255, 255, 0)], radii=0.15)),
+    ]
+
+
+def _nav_boundary_override_debug(msg: Any) -> Any:
+    """Agentic debug: nav boundary elevated above the scene."""
+    return msg.to_rerun(z_offset=_AGENTIC_DEBUG_BOUNDARY_LIFT, color=(0, 220, 255, 200), radii=0.05)
