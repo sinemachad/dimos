@@ -292,6 +292,10 @@ sim = [
     "pygame>=2.6.1",
 ]
 
+navigation = [
+    "gtsam-extended>=4.3a1.post1",
+]
+
 # NOTE: jetson-jp6-cuda126 extra is disabled due to 404 errors from wheel URLs
 # The pypi.jetson-ai-lab.io URLs are currently unavailable. Update with working URLs when available.
 # jetson-jp6-cuda126 = [
@@ -335,6 +339,9 @@ docker = [
 base = [
     "dimos[agents,web,perception,visualization,sim]",
 ]
+
+[tool.uv]
+override-dependencies = ["pytest==8.3.5"] # because gtsam screwed up their dev dependencies
 
 [tool.ruff]
 line-length = 100
@@ -464,4 +471,6 @@ ignore = [
     "dimos/dashboard/dimos.rbl",
     "dimos/web/dimos_interface/themes.json",
     "dimos/manipulation/manipulation_module.py",
+    "dimos/navigation/smart_nav/modules/*/main.cpp",
+    "dimos/navigation/smart_nav/common/*.hpp",
 ]
