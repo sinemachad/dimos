@@ -1,6 +1,6 @@
 // NativeModule example — ping side.
 //
-// Sends a Twist message on `data` at 5 Hz and logs each echo received on `confirm`.
+// Sends a Twist message at 5 Hz and logs each echo received on `confirm`.
 // Runs until terminated (Ctrl+C / SIGTERM from NativeModule.stop()).
 
 use dimos_native_module::{LcmTransport, NativeModule};
@@ -10,7 +10,9 @@ use tokio::time::{interval, Duration};
 #[tokio::main]
 async fn main() {
     let transport = LcmTransport::new().await.expect("Failed to create transport");
-    let mut module = NativeModule::from_args(transport).await.expect("Failed to create module");
+    let (mut module, _config) = NativeModule::from_stdin::<()>(transport)
+        .await
+        .expect("Failed to read config from stdin");
 
     let mut confirm = module.input("confirm", Twist::decode);
     let data = module.output("data", Twist::encode);
@@ -30,7 +32,7 @@ async fn main() {
                 seq += 1;
             }
             Some(echo) = confirm.recv() => {
-                eprintln!("ping: echo received (seq={})", echo.linear.x as u64);
+                eprintln!("ping: echo received (seq={}, test_config={})", echo.linear.x as u64, echo.angular.z as i64);
             }
         }
     }

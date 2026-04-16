@@ -1,14 +1,25 @@
 // NativeModule integration test — pong side.
 //
-// Receives Twist messages on `data` and echoes each one back on `confirm`.
+// Receives Twist messages on `data` and echoes each one back on `confirm`,
+// embedding the test_config value in the reply's angular.z field.
 
 use dimos_native_module::{LcmTransport, NativeModule};
-use lcm_msgs::geometry_msgs::Twist;
+use lcm_msgs::geometry_msgs::{Twist, Vector3};
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, Default)]
+struct PongConfig {
+    test_config: i64,
+}
 
 #[tokio::main]
 async fn main() {
     let transport = LcmTransport::new().await.expect("Failed to create transport");
-    let mut module = NativeModule::from_args(transport).await.expect("Failed to create module");
+    let (mut module, config) = NativeModule::from_stdin::<PongConfig>(transport)
+        .await
+        .expect("Failed to read config from stdin");
+
+    eprintln!("pong: test_config={}", config.test_config);
 
     let mut data = module.input("data", Twist::decode);
     let confirm = module.output("confirm", Twist::encode);
@@ -19,7 +30,11 @@ async fn main() {
     loop {
         match data.recv().await {
             Some(msg) => {
-                confirm.publish(&msg).await.ok();
+                let reply = Twist {
+                    linear: msg.linear,
+                    angular: Vector3 { x: 0.0, y: 0.0, z: config.test_config as f64 },
+                };
+                confirm.publish(&reply).await.ok();
             }
             None => break,
         }

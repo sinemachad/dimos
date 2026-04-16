@@ -1,6 +1,8 @@
 use std::collections::HashMap;
-use std::io;
+use std::io::{self, BufRead};
 use tokio::sync::mpsc;
+
+use serde::de::DeserializeOwned;
 
 use crate::transport::Transport;
 
@@ -130,6 +132,51 @@ impl<T: Transport> NativeModule<T> {
             i += 1;
         }
         Ok(module)
+    }
+
+    /// Read config from a single JSON line on stdin, as written by the Python NativeModule.
+    ///
+    /// The JSON format is:
+    /// ```json
+    /// {"topics": {"port_name": "lcm/topic", ...}, "config": { ... }}
+    /// ```
+    ///
+    /// `C` is the module-specific config type. Use `()` if there is no extra config.
+    /// Blocks until stdin delivers a line (Python always writes before the process does
+    /// anything meaningful, and the OS pipe buffers the data if timing differs).
+    pub async fn from_stdin<C: DeserializeOwned + Default + std::fmt::Debug>(transport: T) -> io::Result<(Self, C)> {
+        let mut module = Self::new(transport);
+
+        let mut line = String::new();
+        io::stdin().lock().read_line(&mut line)?;
+
+        let json: serde_json::Value = serde_json::from_str(line.trim())
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        if let Some(topics) = json.get("topics").and_then(|v| v.as_object()) {
+            for (port, topic) in topics {
+                if let Some(s) = topic.as_str() {
+                    module.topics.insert(port.clone(), s.to_string());
+                }
+            }
+        }
+
+        let config: C = json
+            .get("config")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        let exe = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "unknown".to_string());
+        eprintln!("[{exe}] topics received:");
+        for (port, topic) in &module.topics {
+            eprintln!("  {port} -> {topic}");
+        }
+        eprintln!("[{exe}] config: {config:?}");
+
+        Ok((module, config))
     }
 
     /// Manually set a topic for a port — useful for testing without a parent process.
