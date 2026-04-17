@@ -356,7 +356,8 @@ class TestBufferConfiguratorMacOS:
 
     def test_check_uses_saved_config_as_target(self, tmp_path) -> None:
         conf = tmp_path / "sysctl.json"
-        conf.write_text('{"kern.ipc.maxsockbuf": 32000000}')
+        user_limit = 32 * 2**20  # 32 MiB
+        conf.write_text(f'{"kern.ipc.maxsockbuf": {user_limit}}')
         configurator = BufferConfiguratorMacOS()
         with (
             patch("dimos.protocol.service.system_configurator.lcm._SYSCTL_CONF", conf),
@@ -364,7 +365,7 @@ class TestBufferConfiguratorMacOS:
         ):
             # maxsockbuf: saved target is 32M, current is 32M → ok
             # recvspace/maxdgram: no saved value → uses IDEAL (64M) → needs fix
-            mock_read.side_effect = [32000000] * 3
+            mock_read.side_effect = [user_limit] * 3
             assert configurator.check() is False
             assert len(configurator.needs) == 2
             # maxsockbuf should not be in needs
