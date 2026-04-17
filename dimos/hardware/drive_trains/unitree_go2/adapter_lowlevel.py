@@ -57,13 +57,21 @@ logger = setup_logger()
 
 # Canonical Go2 joint indexing for rt/lowcmd's MotorCmd_[20] array.
 GO2_JOINT_INDEX: dict[tuple[str, str], int] = {
-    ("FR", "hip"): 0, ("FR", "thigh"): 1, ("FR", "calf"): 2,
-    ("FL", "hip"): 3, ("FL", "thigh"): 4, ("FL", "calf"): 5,
-    ("RR", "hip"): 6, ("RR", "thigh"): 7, ("RR", "calf"): 8,
-    ("RL", "hip"): 9, ("RL", "thigh"): 10, ("RL", "calf"): 11,
+    ("FR", "hip"): 0,
+    ("FR", "thigh"): 1,
+    ("FR", "calf"): 2,
+    ("FL", "hip"): 3,
+    ("FL", "thigh"): 4,
+    ("FL", "calf"): 5,
+    ("RR", "hip"): 6,
+    ("RR", "thigh"): 7,
+    ("RR", "calf"): 8,
+    ("RL", "hip"): 9,
+    ("RL", "thigh"): 10,
+    ("RL", "calf"): 11,
 }
 
-GO2_NUM_MOTORS: int = 20      # LowCmd_.motor_cmd array length
+GO2_NUM_MOTORS: int = 20  # LowCmd_.motor_cmd array length
 GO2_NUM_ACTIVE_JOINTS: int = 12  # Go2 uses 12 of the 20 slots
 
 # If no flush() happens within this window the watchdog fires
@@ -108,8 +116,8 @@ class UnitreeGo2LowLevelAdapter:
         self._assume_dds_initialized = assume_dds_initialized
 
         self._connected = False
-        self._lock = threading.Lock()            # serializes _cmd + publisher.Write
-        self._state_lock = threading.Lock()      # guards _latest_low_state
+        self._lock = threading.Lock()  # serializes _cmd + publisher.Write
+        self._state_lock = threading.Lock()  # guards _latest_low_state
 
         self._latest_low_state: LowState_ | None = None
         self._cmd: LowCmd_ | None = None
@@ -181,8 +189,7 @@ class UnitreeGo2LowLevelAdapter:
                 time.sleep(0.05)
             if not got_state:
                 logger.error(
-                    "[Go2 LowLevel] No LowState_ message in 3s — robot "
-                    "offline or wrong DDS domain?"
+                    "[Go2 LowLevel] No LowState_ message in 3s — robot offline or wrong DDS domain?"
                 )
                 self._teardown()
                 return False
@@ -283,8 +290,7 @@ class UnitreeGo2LowLevelAdapter:
             return False
         if idx < 0 or idx >= GO2_NUM_ACTIVE_JOINTS:
             logger.warning(
-                f"[Go2 LowLevel] joint idx {idx} out of range "
-                f"[0, {GO2_NUM_ACTIVE_JOINTS})"
+                f"[Go2 LowLevel] joint idx {idx} out of range [0, {GO2_NUM_ACTIVE_JOINTS})"
             )
             return False
 
@@ -315,9 +321,7 @@ class UnitreeGo2LowLevelAdapter:
         """
         n = GO2_NUM_ACTIVE_JOINTS
         if any(len(v) != n for v in (qs, dqs, taus, kps, kds)):
-            logger.warning(
-                f"[Go2 LowLevel] write_joint_array expected length {n} per arg"
-            )
+            logger.warning(f"[Go2 LowLevel] write_joint_array expected length {n} per arg")
             return False
         if not self._connected or self._cmd is None:
             return False
@@ -394,9 +398,7 @@ class UnitreeGo2LowLevelAdapter:
                 "imu": {
                     "quaternion": [float(x) for x in state.imu_state.quaternion],
                     "gyroscope": [float(x) for x in state.imu_state.gyroscope],
-                    "accelerometer": [
-                        float(x) for x in state.imu_state.accelerometer
-                    ],
+                    "accelerometer": [float(x) for x in state.imu_state.accelerometer],
                     "rpy": [float(x) for x in state.imu_state.rpy],
                 },
                 "foot_force": [float(x) for x in state.foot_force],
@@ -431,10 +433,7 @@ class UnitreeGo2LowLevelAdapter:
         with self._state_lock:
             state = self._latest_low_state
         if state is None:
-            logger.error(
-                "[Go2 LowLevel] emergency_damp: no LowState_ yet, cannot hold "
-                "current q"
-            )
+            logger.error("[Go2 LowLevel] emergency_damp: no LowState_ yet, cannot hold current q")
             return False
 
         try:
@@ -471,9 +470,7 @@ class UnitreeGo2LowLevelAdapter:
             try:
                 self.emergency_damp()
             except Exception as e:
-                logger.warning(
-                    f"[Go2 LowLevel] emergency_damp during teardown: {e}"
-                )
+                logger.warning(f"[Go2 LowLevel] emergency_damp during teardown: {e}")
 
         self._connected = False
 
@@ -542,9 +539,7 @@ class UnitreeGo2LowLevelAdapter:
             time.sleep(0.05)
 
         if not samples:
-            logger.error(
-                "[Go2 LowLevel] No foot_force samples to verify damped state"
-            )
+            logger.error("[Go2 LowLevel] No foot_force samples to verify damped state")
             return False
 
         # Average the last ~10 samples (or fewer if we got less).
@@ -620,21 +615,18 @@ class UnitreeGo2LowLevelAdapter:
                 now = time.monotonic()
                 if now - last_log_ts > 1.0:
                     logger.warning(
-                        f"[Go2 LowLevel] Watchdog: no user flush in "
-                        f"{elapsed:.3f}s, holding damp"
+                        f"[Go2 LowLevel] Watchdog: no user flush in {elapsed:.3f}s, holding damp"
                     )
                     last_log_ts = now
                 try:
                     self.emergency_damp()
                 except Exception as e:
-                    logger.error(
-                        f"[Go2 LowLevel] Watchdog emergency_damp failed: {e}"
-                    )
+                    logger.error(f"[Go2 LowLevel] Watchdog emergency_damp failed: {e}")
 
 
 __all__ = [
-    "UnitreeGo2LowLevelAdapter",
     "GO2_JOINT_INDEX",
-    "GO2_NUM_MOTORS",
     "GO2_NUM_ACTIVE_JOINTS",
+    "GO2_NUM_MOTORS",
+    "UnitreeGo2LowLevelAdapter",
 ]
