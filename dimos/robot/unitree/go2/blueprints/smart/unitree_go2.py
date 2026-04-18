@@ -13,13 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
+
 from dimos.core.coordination.blueprints import autoconnect
 from dimos.core.core import rpc
 from dimos.core.stream import In
 from dimos.mapping.costmapper import CostMapper
 from dimos.mapping.voxels import VoxelGridMapper
 from dimos.memory2.embed import EmbedImages
-from dimos.memory2.module import Recorder
+from dimos.memory2.module import Recorder, RecorderConfig
 from dimos.memory2.transform import QualityWindow
 from dimos.models.embedding.clip import CLIPModel
 from dimos.msgs.sensor_msgs.Image import Image
@@ -41,9 +43,15 @@ unitree_go2 = autoconnect(
 ).global_config(n_workers=9, robot_model="unitree_go2")
 
 
+class Go2MemoryConfig(RecorderConfig):
+    db_path: str | Path = "go2_recording.db"
+
+
 class Go2Memory(Recorder):
     color_image: In[Image]
     lidar: In[PointCloud2]
+
+    config: Go2MemoryConfig
 
     @rpc
     def start(self) -> None:
@@ -73,4 +81,7 @@ unitree_go2_memory = autoconnect(
     Go2Memory.blueprint(),
 ).global_config(n_workers=10)
 
+__all__ = ["unitree_go2", "unitree_go2_memory"]
+
+__all__ = ["unitree_go2", "unitree_go2_memory"]
 __all__ = ["unitree_go2", "unitree_go2_memory"]

@@ -23,11 +23,14 @@ from typing import Any
 from pydantic import field_validator
 from reactivex.disposable import Disposable
 
+from dimos.agents.annotation import skill
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
 from dimos.memory2.store.null import NullStore
 from dimos.memory2.store.sqlite import SqliteStore
 from dimos.memory2.stream import Stream
+from dimos.models.embedding.base import EmbeddingModel
+from dimos.models.embedding.clip import CLIPModel
 
 logger = logging.getLogger(__name__)
 
@@ -120,11 +123,8 @@ class StreamModule(Module):
         super().stop()
 
 
-class RecorderConfig(ModuleConfig):
-    """Config for the Recorder module."""
-
+class MemoryModuleConfig(ModuleConfig):
     db_path: str | Path = "recording.db"
-    overwrite: bool = True
 
     @field_validator("db_path", mode="before")
     @classmethod
@@ -135,6 +135,53 @@ class RecorderConfig(ModuleConfig):
 
             p = get_project_root() / p
         return p
+
+
+class RecorderConfig(MemoryModuleConfig):
+    overwrite: bool = True
+
+
+class MemoryModule(Module):
+    """Base class for memory-related modules, like recorders and search systems.
+    Provides a config with a db_path for the module's MemoryStore, and common start/stop logic.
+
+    If changing the backend globally in dimos, this class will be replaced
+    """
+
+    config: MemoryModuleConfig
+    store: SqliteStore | None = None
+
+    @property
+    def store(self):
+        if self._store is not None:
+            return self._store
+
+        self._store = self.register_disposable(
+            SqliteStore(path=str(self.config.db_path)),
+        )
+        self._store.start()
+        return self._store
+
+
+class SemanticSearchConfig(MemoryModuleConfig):
+    embedding_model: EmbeddingModel = CLIPModel
+
+
+class SemanticSearch(MemoryModule):
+    config: SemanticSearchConfig
+    model: EmbeddingModel | None = None
+
+    @rpc
+    def start(self):
+        self.model = self.register_disposable(self.config.embedding_model())
+        self.model.start()
+
+    @skill
+    def search(self, query: str):
+        query_vector = self.model.embed_text(query)
+        self.store.streams.color_image_embedded.search(query_vector)
+        # TODO we want to cluster these by peaks
+        # then we want to sort by time/distance depending on desired weight here..
 
 
 class Recorder(Module):
@@ -150,15 +197,14 @@ class Recorder(Module):
     """
 
     config: RecorderConfig
+    store: SqliteStore | None = None
 
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self._store: SqliteStore | None = None
-
-    @rpc
-    def start(self) -> None:
-        super().start()
-
+    def __init__(self) -> None:
+        # optionally delete existing recording on init if overwrite is True
+        # TODO: store reset API/logic is not implemented yet
+        # this module should have no relation to actual files (this is SqliteStore specific)
+        # .live() subs need to know how to re-sub
+        # in case of a restart of this module in a deployed blueprint
         db_path = Path(self.config.db_path)
         if db_path.exists():
             if self.config.overwrite:
@@ -167,15 +213,16 @@ class Recorder(Module):
             else:
                 raise FileExistsError(f"Recording already exists: {db_path}")
 
-        self._store = self.register_disposable(SqliteStore(path=str(db_path)))
-        self._store.start()
+    @rpc
+    def start(self) -> None:
+        super().start()
 
         if not self.inputs:
             logger.warning("Recorder has no In ports — nothing to record, subclass the Recorder")
             return
 
         for name, port in self.inputs.items():
-            stream: Stream[Any] = self._store.stream(name, port.type)
+            stream: Stream[Any] = self.store.stream(name, port.type)
             self.register_disposable(
                 Disposable(port.subscribe(lambda msg, s=stream: s.append(msg)))  # type: ignore[misc]
             )
@@ -183,4 +230,8 @@ class Recorder(Module):
 
     @rpc
     def stop(self) -> None:
+        super().stop()
+
+    def stop(self) -> None:
+        super().stop()
         super().stop()
