@@ -62,8 +62,7 @@ def _load(path: str):
     for role, group in df.groupby("role"):
         if role == _COORDINATOR:
             continue
-        mods_col = group["modules"].dropna() if "modules" in group.columns else None
-        mods = mods_col.iloc[0] if mods_col is not None and len(mods_col) > 0 else None
+        mods = next((m for m in group.get("modules", []) if m), None)
         labels[role] = ", ".join(mods) if mods else role
 
     df["label"] = df["role"].map(labels)
@@ -85,14 +84,14 @@ def _plot(df, labels: dict[str, str], metrics: list[str], out: str | None) -> No
         for role, group in df.groupby("role"):
             ax.plot(group["ts"], group[metric] * scale, label=labels[role])
         ax.set_ylabel(_METRIC_LABELS.get(metric, metric))
-        ax.legend(fontsize=8)
+        ax.legend(fontsize=8, loc="center left", bbox_to_anchor=(1.01, 0.5), borderaxespad=0)
         ax.grid(True, alpha=0.3)
 
     axes[-1].set_xlabel("Time")
     fig.tight_layout()
 
     if out:
-        fig.savefig(out, dpi=150)
+        fig.savefig(out, dpi=150, bbox_inches="tight")
         print(f"Saved to {out}")
     else:
         plt.show()
