@@ -110,11 +110,6 @@ class UnitreeGo2TwistAdapter:
             1 = fast (default, max). Applied once after FreeWalk succeeds.
             May be ignored in non-'normal' modes (mcf runs its own planner).
             Change at runtime via set_speed_level().
-        preferred_mode: If set (default 'normal'), connect() will
-            automatically switch into this mode during startup — sits the
-            robot down, releases the running controller, selects the
-            preferred one, then stands back up. Pass None to disable
-            (accept whatever mode the robot booted in).
 
     TODO(network_interface): multi-NIC hosts may need an explicit DDS
     interface name passed through to ChannelFactoryInitialize(0, iface).
@@ -129,20 +124,13 @@ class UnitreeGo2TwistAdapter:
     # don't force a release (which would drop servo) just to match a name.
     _SPORT_MODE_CANDIDATES: tuple[str, ...] = ("normal", "ai", "advanced", "mcf")
 
-    def __init__(
-        self,
-        dof: int = 3,
-        speed_level: int = 1,
-        preferred_mode: str | None = "normal",
-        **_: object,
-    ) -> None:
+    def __init__(self, dof: int = 3, speed_level: int = 1, **_: object) -> None:
         if dof != 3:
             raise ValueError(f"Go2 only supports 3 DOF (vx, vy, wz), got {dof}")
 
         self._session: _Session | None = None
         self._session_lock = threading.Lock()
         self._speed_level = speed_level
-        self._preferred_mode = preferred_mode
 
     # =========================================================================
     # TwistBaseAdapter protocol
@@ -157,9 +145,7 @@ class UnitreeGo2TwistAdapter:
           3. MotionSwitcher.Init + _activate_sport_mode() — accepts
              whatever controller is currently running.
           4. SportClient.Init.
-          5. If preferred_mode is set and current != preferred:
-             stand_down_and_release() + switch_mode(preferred).
-          6. _initialize_locomotion(): StandUp + FreeWalk + SpeedLevel.
+          5. _initialize_locomotion(): StandUp + FreeWalk + SpeedLevel.
 
         Fails fast on persistent 3102 (RPC_ERR_CLIENT_SEND) — logs
         actionable guidance ("exit AI mode with L2+B, close Unitree app,
@@ -227,29 +213,6 @@ class UnitreeGo2TwistAdapter:
             time.sleep(2.0)
 
             logger.info("[Go2] Connected ✓")
-
-            # If the robot came up in a mode other than our preferred one,
-            # transition safely: stand down, release, select preferred.
-            # This is the full safe path — switch_mode's standing-robot
-            # guard is bypassed because stand_down_and_release() has just
-            # put the joints into a damped / idle state.
-            if self._preferred_mode is not None:
-                current = self.check_mode()
-                if current and current != self._preferred_mode:
-                    logger.info(
-                        f"[Go2] Booted in '{current}' but preferred_mode="
-                        f"'{self._preferred_mode}' — switching safely..."
-                    )
-                    if not self.stand_down_and_release():
-                        logger.error(
-                            "[Go2] Could not safely stand down; aborting preferred-mode switch"
-                        )
-                        self.disconnect()
-                        return False
-                    if not self.switch_mode(self._preferred_mode, i_have_sat_the_robot=True):
-                        logger.error(f"[Go2] switch_mode('{self._preferred_mode}') failed")
-                        self.disconnect()
-                        return False
 
             if not self._initialize_locomotion():
                 logger.error("[Go2] Failed to initialize locomotion mode")
@@ -627,7 +590,6 @@ class UnitreeGo2TwistAdapter:
             {
               'connected': bool,
               'mode': str | None,          — current MotionSwitcher mode
-              'preferred_mode': str | None,
               'enabled': bool,
               'locomotion_ready': bool,
               'speed_level': int,
@@ -648,7 +610,6 @@ class UnitreeGo2TwistAdapter:
             return {
                 "connected": False,
                 "mode": None,
-                "preferred_mode": self._preferred_mode,
                 "enabled": False,
                 "locomotion_ready": False,
                 "speed_level": self._speed_level,
@@ -697,7 +658,6 @@ class UnitreeGo2TwistAdapter:
         return {
             "connected": True,
             "mode": mode,
-            "preferred_mode": self._preferred_mode,
             "enabled": enabled,
             "locomotion_ready": locomotion_ready,
             "speed_level": self._speed_level,
@@ -716,14 +676,12 @@ class UnitreeGo2TwistAdapter:
         if not s["connected"]:
             logger.info(
                 "[Go2] status: DISCONNECTED  "
-                f"(preferred_mode={s['preferred_mode']!r}, "
-                f"speed_level={s['speed_level']}, "
+                f"(speed_level={s['speed_level']}, "
                 f"known_modes={list(s['known_modes'])})"
             )
             return
 
         mode_str = s["mode"] if s["mode"] is not None else "?"
-        mode_marker = "✓" if mode_str == s["preferred_mode"] else "≠"
 
         vel = s["velocity"]
         pos = s["position"]
@@ -733,7 +691,7 @@ class UnitreeGo2TwistAdapter:
 
         logger.info(
             f"[Go2] status: CONNECTED  "
-            f"mode='{mode_str}' {mode_marker} preferred='{s['preferred_mode']}'  "
+            f"mode='{mode_str}'  "
             f"enabled={s['enabled']}  locomotion_ready={s['locomotion_ready']}  "
             f"speed_level={s['speed_level']}  "
             f"sport_mode_num={s['sport_mode_num']}  "
