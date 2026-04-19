@@ -26,9 +26,6 @@ from dimos.core.global_config import global_config
 from dimos.mapping.costmapper import CostMapper
 from dimos.mapping.voxels import VoxelGridMapper
 from dimos.msgs.sensor_msgs.Image import Image
-from dimos.navigation.frontier_exploration.wavefront_frontier_goal_selector import (
-    WavefrontFrontierExplorer,
-)
 from dimos.navigation.replanning_a_star.module import ReplanningAStarPlanner
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.robot.sim.bridge import DimSimBridge
@@ -132,7 +129,6 @@ unitree_go2_dimsim = (
         VoxelGridMapper.blueprint(voxel_size=0.1),
         CostMapper.blueprint(),
         ReplanningAStarPlanner.blueprint(),
-        WavefrontFrontierExplorer.blueprint(),
         WebsocketVisModule.blueprint(),
     )
     .global_config(n_workers=6, robot_model="unitree_go2", simulation=True)

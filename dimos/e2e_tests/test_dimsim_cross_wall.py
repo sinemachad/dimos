@@ -53,8 +53,7 @@ os.environ.setdefault("DISPLAY", ":1")
 
 ODOM_TOPIC = "/odom#geometry_msgs.PoseStamped"
 GOAL_TOPIC = "/clicked_point#geometry_msgs.PointStamped"
-EXPLORE_TOPIC = "/explore_cmd#std_msgs.Bool"
-STOP_EXPLORE_TOPIC = "/stop_explore_cmd#std_msgs.Bool"
+CMD_VEL_TOPIC = "/cmd_vel#geometry_msgs.Twist"
 BRIDGE_PORT = 8090
 
 # DimSim "apt" scene waypoints (ROS Z-up frame).
@@ -169,7 +168,8 @@ class TestDimSimCrossWall:
             unitree_go2_dimsim,
         )
 
-        from dimos_lcm.std_msgs.Bool import Bool
+        from dimos.msgs.geometry_msgs.Twist import Twist
+        from dimos.msgs.geometry_msgs.Vector3 import Vector3
 
         # -- Cleanup from previous runs --------------------------------------
         _force_kill_port(BRIDGE_PORT)
@@ -233,13 +233,40 @@ class TestDimSimCrossWall:
 
             print(f"[test] Odom online. Robot at ({robot_x:.2f}, {robot_y:.2f})")
 
-            # Start frontier exploration to build the initial map.
-            # The explorer drives the robot around, building voxels + costmap.
-            explore_msg = Bool()
-            explore_msg.data = True
-            lc.publish(EXPLORE_TOPIC, explore_msg.lcm_encode())
-            print(f"[test] Frontier exploration started, warming up for {WARMUP_SEC}s…")
-            time.sleep(WARMUP_SEC)
+            # Drive the robot around to build the initial voxel map.
+            # Without this, the planner has no costmap to plan on.
+            print("[test] Building map by driving robot…")
+
+            def _drive(linear_x: float, angular_z: float, duration: float) -> None:
+                """Send cmd_vel at 20 Hz for the given duration."""
+                twist = Twist(
+                    linear=Vector3(linear_x, 0.0, 0.0),
+                    angular=Vector3(0.0, 0.0, angular_z),
+                )
+                deadline_t = time.monotonic() + duration
+                while time.monotonic() < deadline_t:
+                    lc.publish(CMD_VEL_TOPIC, twist.lcm_encode())
+                    lc.handle_timeout(10)
+                    time.sleep(0.05)
+                # Stop
+                stop = Twist(
+                    linear=Vector3(0.0, 0.0, 0.0),
+                    angular=Vector3(0.0, 0.0, 0.0),
+                )
+                lc.publish(CMD_VEL_TOPIC, stop.lcm_encode())
+
+            # Drive forward, turn, drive forward, turn — builds map coverage
+            _drive(0.5, 0.0, 3.0)   # forward 3s
+            _drive(0.0, 0.8, 2.0)   # turn left 2s
+            _drive(0.5, 0.0, 3.0)   # forward 3s
+            _drive(0.0, 0.8, 2.0)   # turn left 2s
+            _drive(0.5, 0.0, 3.0)   # forward 3s
+            _drive(0.0, 0.8, 2.0)   # turn left 2s
+            _drive(0.5, 0.0, 3.0)   # forward 3s
+
+            # Let the map pipeline settle
+            time.sleep(3.0)
+
             with lock:
                 print(
                     f"[test] Warmup complete. odom_count={odom_count}, "
@@ -257,11 +284,6 @@ class TestDimSimCrossWall:
                     f"dist={_distance(sx, sy, gx, gy):.2f}m | "
                     f"budget={timeout_sec}s ==="
                 )
-
-                # Stop frontier exploration so it doesn't override our goal
-                stop_msg = Bool()
-                stop_msg.data = True
-                lc.publish(STOP_EXPLORE_TOPIC, stop_msg.lcm_encode())
 
                 # Publish goal
                 goal = PointStamped(
