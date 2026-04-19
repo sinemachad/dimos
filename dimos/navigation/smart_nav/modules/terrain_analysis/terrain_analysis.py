@@ -20,10 +20,18 @@ a terrain cost map with obstacle classification.
 
 from __future__ import annotations
 
+import threading
+import time
+
+from dimos.core.core import rpc
 from dimos.core.native_module import NativeModule, NativeModuleConfig
 from dimos.core.stream import In, Out
+from dimos.msgs.geometry_msgs.Pose import Pose
 from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
+from dimos.utils.logging_config import setup_logger
+
+logger = setup_logger()
 
 
 class TerrainAnalysisConfig(NativeModuleConfig):
@@ -139,6 +147,12 @@ class TerrainAnalysisConfig(NativeModuleConfig):
     # Distance-to-z ratio used for slope-based point filtering.
     distance_ratio_z: float | None = None
 
+    # TF bridge: query TF for corrected pose and feed it to the C++ binary.
+    use_tf_bridge: bool = True
+    body_frame: str = "body"
+    tf_bridge_rate: float = 30.0
+    cli_exclude: frozenset[str] = frozenset({"use_tf_bridge", "body_frame", "tf_bridge_rate"})
+
 
 class TerrainAnalysis(NativeModule):
     """Terrain analysis native module for obstacle cost map generation.
@@ -146,9 +160,16 @@ class TerrainAnalysis(NativeModule):
     Processes registered point clouds from SLAM to classify terrain as
     ground/obstacle, outputting a cost-annotated point cloud.
 
+    The C++ binary receives odometry via its LCM topic.  When
+    ``use_tf_bridge`` is enabled (default), the Python wrapper queries
+    the TF tree for the corrected ``map → body`` pose and publishes
+    Odometry on the binary's odometry topic.  This replaces the old
+    ``corrected_odometry`` stream.
+
     Ports:
         registered_scan (In[PointCloud2]): World-frame registered point cloud.
         odometry (In[Odometry]): Vehicle state for local frame reference.
+            Fed by the TF bridge when ``use_tf_bridge`` is True.
         terrain_map (Out[PointCloud2]): Terrain cost map (intensity=obstacle cost).
     """
 
@@ -157,3 +178,53 @@ class TerrainAnalysis(NativeModule):
     registered_scan: In[PointCloud2]
     odometry: In[Odometry]
     terrain_map: Out[PointCloud2]
+
+    _bridge_running: bool = False
+    _bridge_thread: threading.Thread | None = None
+
+    @rpc
+    def start(self) -> None:
+        super().start()
+        if self.config.use_tf_bridge:
+            self._bridge_running = True
+            self._bridge_thread = threading.Thread(
+                target=self._tf_odom_bridge, daemon=True, name="tf-bridge-terrain"
+            )
+            self._bridge_thread.start()
+
+    @rpc
+    def stop(self) -> None:
+        self._bridge_running = False
+        if self._bridge_thread is not None:
+            self._bridge_thread.join(timeout=3.0)
+            self._bridge_thread = None
+        super().stop()
+
+    def _tf_odom_bridge(self) -> None:
+        """Poll TF for corrected pose and publish Odometry for the C++ binary."""
+        rate = self.config.tf_bridge_rate
+        period = 1.0 / rate if rate > 0 else 1.0 / 30.0
+        body = self.config.body_frame
+        while self._bridge_running:
+            t0 = time.monotonic()
+            frame_id = "map"
+            tf = self.tf.get("map", body)
+            if tf is None:
+                frame_id = "odom"
+                tf = self.tf.get("odom", body)
+            if tf is not None:
+                odom = Odometry(
+                    ts=tf.ts,
+                    frame_id=frame_id,
+                    child_frame_id=body,
+                    pose=Pose(
+                        position=[tf.translation.x, tf.translation.y, tf.translation.z],
+                        orientation=[tf.rotation.x, tf.rotation.y, tf.rotation.z, tf.rotation.w],
+                    ),
+                )
+                if self.odometry._transport is not None:
+                    self.odometry._transport.broadcast(None, odom)
+            dt = time.monotonic() - t0
+            sleep = period - dt
+            if sleep > 0:
+                time.sleep(sleep)

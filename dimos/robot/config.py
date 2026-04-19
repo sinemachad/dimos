@@ -55,15 +55,16 @@ class RobotConfig(BaseModel):
     model_path: Path
     end_effector_link: str | None = None
 
-    # Physical dimensions (meters)
-    height_clearance: float | None = None  # max height
-    width_clearance: float | None = None  # max width
+    # Robot geometry envelope (meters) — used by navigation costmaps and
+    # obstacle-avoidance planners to treat the robot as a bounding box.
+    height_clearance: float | None = None  # tallest extent of the robot
+    width_clearance: float | None = None  # widest extent of the robot
 
-    # These offsets are applied so that odometry  at 0,0,0 corresponds roughly with the floor
-    # Note: these cannot (easily) be calculated from the URDF because
-    #       the URDF doesn't always have an initial robot pose/stance so the
-    # This is a quality of life offset, not exact
-    # The key names should match keys in the urdf
+    # Per-link odometry offsets so that the odom origin (0, 0, 0) aligns
+    # roughly with the floor plane.  The URDF alone cannot provide this
+    # because it does not encode an initial stance/pose.  Keys must match
+    # URDF link names (e.g. {"mid360_link": <tf offset>}).  Consumed by
+    # navigation blueprints when mounting sensors relative to the base.
     internal_odom_offsets: dict[str, Any] = Field(default_factory=dict)
 
     # Hardware connection

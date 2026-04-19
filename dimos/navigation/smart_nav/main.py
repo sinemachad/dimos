@@ -34,9 +34,6 @@ from typing import Any
 
 from dimos.core.coordination.blueprints import Blueprint, autoconnect
 from dimos.core.module import ModuleBase
-from dimos.spec.utils import Spec
-
-logger = logging.getLogger(__name__)
 from dimos.navigation.smart_nav.modules.far_planner.far_planner import FarPlanner
 from dimos.navigation.smart_nav.modules.local_planner.local_planner import LocalPlanner
 from dimos.navigation.smart_nav.modules.movement_manager.movement_manager import MovementManager
@@ -47,6 +44,9 @@ from dimos.navigation.smart_nav.modules.tare_planner.tare_planner import TarePla
 from dimos.navigation.smart_nav.modules.terrain_analysis.terrain_analysis import TerrainAnalysis
 from dimos.navigation.smart_nav.modules.terrain_map_ext.terrain_map_ext import TerrainMapExt
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
+from dimos.spec.utils import Spec
+
+logger = logging.getLogger(__name__)
 
 
 def smart_nav(
@@ -55,6 +55,8 @@ def smart_nav(
     use_terrain_map_ext: bool = True,
     use_simple_planner: bool = False,
     vehicle_height: float | None = None,
+    vehicle_width: float | None = None,
+    body_frame: str | None = None,
     terrain_analysis: dict[str, Any] | None = None,
     terrain_map_ext: dict[str, Any] | None = None,
     local_planner: dict[str, Any] | None = None,
@@ -76,7 +78,6 @@ def smart_nav(
         tele_cmd_vel:    In[Twist]         — optional teleop command
 
         cmd_vel:            Out[Twist]        — final velocity command (MovementManager)
-        corrected_odometry: Out[Odometry]     — PGO loop-closure-corrected pose
         global_map:         Out[PointCloud2]  — PGO accumulated keyframe map
         terrain_map:        Out[PointCloud2]  — TerrainAnalysis ground/obstacle grid
         path:               Out[Path]         — LocalPlanner's chosen local path
@@ -93,6 +94,11 @@ def smart_nav(
             accumulator used for visualization and wider-range planning.
         vehicle_height: Ignore terrain points above this height (m). Threaded
             into TerrainAnalysis's `vehicle_height` config. Defaults to 1.2m.
+        body_frame: TF child frame for the robot body. Defaults to ``"body"``
+            (REP-105). Set to ``"sensor"`` for the Unity sim bridge, which
+            publishes TF with ``child_frame_id="sensor"``. Threaded into
+            TerrainAnalysis, FarPlanner, SimplePlanner, and MovementManager
+            configs so their TF bridges query the correct frame.
         terrain_analysis, terrain_map_ext, local_planner, path_follower,
         far_planner, pgo, movement_manager, tare_planner:
         Per-module config override dicts. Merged on top
@@ -154,6 +160,7 @@ def smart_nav(
                 "max_ground_lift": 0.15,
                 "distance_ratio_z": 0.2,
                 "vehicle_height": 1.5 if vehicle_height is None else vehicle_height,
+                **({"body_frame": body_frame} if body_frame is not None else {}),
                 **(terrain_analysis or {}),
             }
         ),
@@ -167,6 +174,11 @@ def smart_nav(
                 "max_relative_z": 0.3,
                 "min_relative_z": -0.4,
                 "two_way_drive": False,
+                **(
+                    {"vehicle_width": vehicle_width, "vehicle_length": vehicle_width}
+                    if vehicle_width is not None
+                    else {}
+                ),
                 **(local_planner or {}),
             }
         ),
@@ -191,15 +203,34 @@ def smart_nav(
                             if vehicle_height is not None
                             else {}
                         ),
+                        **({"body_frame": body_frame} if body_frame is not None else {}),
                         **(simple_planner or {}),
                     }
                 )
             ]
             if use_simple_planner
-            else [FarPlanner.blueprint(**(far_planner or {}))]
+            else [
+                FarPlanner.blueprint(
+                    **{
+                        "path_momentum_thred": 15,
+                        "node_finalize_thred": 5,
+                        **(
+                            {"vehicle_height": vehicle_height} if vehicle_height is not None else {}
+                        ),
+                        **({"robot_dimension": vehicle_width} if vehicle_width is not None else {}),
+                        **({"body_frame": body_frame} if body_frame is not None else {}),
+                        **(far_planner or {}),
+                    }
+                )
+            ]
         ),
         PGO.blueprint(**(pgo or {})),
-        MovementManager.blueprint(**(movement_manager or {})),
+        MovementManager.blueprint(
+            **{
+                **({"body_frame": body_frame} if body_frame is not None else {}),
+                **(movement_manager or {}),
+            }
+        ),
     ]
     if use_terrain_map_ext:
         modules.append(
@@ -225,12 +256,10 @@ def smart_nav(
     remappings: list[tuple[type[ModuleBase], str, str | type[ModuleBase] | type[Spec]]] = [
         # PathFollower cmd_vel → MovementManager nav input (avoid collision with mux output)
         (PathFollower, "cmd_vel", "nav_cmd_vel"),
-        # NativeModule planners still receive corrected odometry via the
-        # stream (C++ binaries subscribe to LCM topics directly).
-        # Python modules (SimplePlanner, MovementManager) query the TF tree
-        # instead (map→body via the PGO map→odom + FastLio2 odom→body chain).
-        *([] if use_simple_planner else [(FarPlanner, "odometry", "corrected_odometry")]),
-        (TerrainAnalysis, "odometry", "corrected_odometry"),
+        # Disconnect NativeModules from raw FastLio2 odometry —
+        # their TF bridges feed corrected pose to the C++ binary instead.
+        *([] if use_simple_planner else [(FarPlanner, "odometry", "_far_odom_bridge")]),
+        (TerrainAnalysis, "odometry", "_terrain_odom_bridge"),
         # Planner owns way_point — disconnect MovementManager's click relay.
         (MovementManager, "way_point", "_mgr_way_point_unused"),
         (PGO, "global_map", "global_map_pgo"),

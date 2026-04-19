@@ -89,7 +89,7 @@ dependencies = [
     "psutil>=7.0.0",
     "sqlite-vec>=0.1.6",
     "lz4>=4.4.5",
-    "open3d-unofficial-arm>=0.19.0.post9",
+    "rpyc>=6.0.0",
 ]
 
 
@@ -411,6 +411,8 @@ module = [
     "plum.*",
     "portal",
     "psutil",
+    "rpyc",
+    "rpyc.*",
     "pycuda",
     "pycuda.*",
     "pydrake",

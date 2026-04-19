@@ -42,6 +42,9 @@ os.environ.setdefault("DISPLAY", ":1")
 
 ODOM_TOPIC = "/odometry#nav_msgs.Odometry"
 GOAL_TOPIC = "/clicked_point#geometry_msgs.PointStamped"
+FAR_PATH_TOPIC = "/goal_path#nav_msgs.Path"
+FAR_WAYPOINT_TOPIC = "/way_point#geometry_msgs.PointStamped"
+LOCAL_PATH_TOPIC = "/path#nav_msgs.Path"
 
 # Waypoint definitions: (name, x, y, z, timeout_sec, reach_threshold_m)
 WAYPOINTS = [
@@ -94,6 +97,7 @@ class TestCrossWallPlanning:
                     vehicle_height=1.24,
                 ),
                 smart_nav(
+                    body_frame="sensor",
                     terrain_analysis={
                         "obstacle_height_threshold": 0.1,
                         "ground_height_threshold": 0.05,
@@ -116,11 +120,6 @@ class TestCrossWallPlanning:
                         "slow_down_distance_threshold": 0.5,
                         "omni_dir_goal_threshold": 0.5,
                         "two_way_drive": False,
-                    },
-                    far_planner={
-                        "sensor_range": 15.0,
-                        "is_static_env": True,
-                        "converge_dist": 1.5,
                     },
                 ),
                 vis_module(
@@ -167,6 +166,45 @@ class TestCrossWallPlanning:
                 robot_y = msg.y
 
         lc.subscribe(ODOM_TOPIC, _odom_handler)
+
+        # -- Path churn tracking -----------------------------------------------
+        from dimos.msgs.geometry_msgs.PointStamped import PointStamped as PS
+        from dimos.msgs.nav_msgs.Path import Path as NavPath
+
+        far_path_count = 0
+        far_path_lengths: list[int] = []  # number of poses per path
+        far_path_endpoints: list[tuple[float, float]] = []  # endpoint of each path
+        far_waypoints: list[tuple[float, float, float]] = []  # (x, y, timestamp)
+        local_path_count = 0
+        local_path_lengths: list[int] = []
+
+        def _far_path_handler(channel: str, data: bytes) -> None:
+            nonlocal far_path_count
+            msg = NavPath.lcm_decode(data)
+            n = len(msg.poses) if hasattr(msg, "poses") else 0
+            with lock:
+                far_path_count += 1
+                far_path_lengths.append(n)
+                if n > 0:
+                    last = msg.poses[-1]
+                    far_path_endpoints.append((last.position.x, last.position.y))
+
+        def _far_wp_handler(channel: str, data: bytes) -> None:
+            msg = PS.lcm_decode(data)
+            with lock:
+                far_waypoints.append((msg.x, msg.y, time.monotonic()))
+
+        def _local_path_handler(channel: str, data: bytes) -> None:
+            nonlocal local_path_count
+            msg = NavPath.lcm_decode(data)
+            n = len(msg.poses) if hasattr(msg, "poses") else 0
+            with lock:
+                local_path_count += 1
+                local_path_lengths.append(n)
+
+        lc.subscribe(FAR_PATH_TOPIC, _far_path_handler)
+        lc.subscribe(FAR_WAYPOINT_TOPIC, _far_wp_handler)
+        lc.subscribe(LOCAL_PATH_TOPIC, _local_path_handler)
 
         # LCM receive thread
         lcm_running = True
@@ -218,6 +256,12 @@ class TestCrossWallPlanning:
                     f"budget={timeout_sec}s ==="
                 )
 
+                # Reset per-segment churn counters
+                with lock:
+                    seg_far_start = far_path_count
+                    seg_local_start = local_path_count
+                    seg_wp_start = len(far_waypoints)
+
                 # Publish goal
                 goal = PointStamped(x=gx, y=gy, z=gz, ts=time.time(), frame_id="map")
                 lc.publish(GOAL_TOPIC, goal.lcm_encode())
@@ -239,9 +283,16 @@ class TestCrossWallPlanning:
 
                     # Progress log every 5 seconds
                     if now - last_print >= 5.0:
+                        with lock:
+                            fp = far_path_count - seg_far_start
+                            lp = local_path_count - seg_local_start
+                            wps = len(far_waypoints) - seg_wp_start
+                            last_wp = far_waypoints[-1] if far_waypoints else None
+                        wp_str = f"wp=({last_wp[0]:.1f},{last_wp[1]:.1f})" if last_wp else "wp=none"
                         print(
                             f"[test]   {name}: {elapsed:.0f}s/{timeout_sec}s | "
-                            f"pos ({cx:.2f}, {cy:.2f}) | dist={dist:.2f}m"
+                            f"pos ({cx:.2f}, {cy:.2f}) | dist={dist:.2f}m | "
+                            f"far_paths={fp} local_paths={lp} wps={wps} {wp_str}"
                         )
                         last_print = now
 
@@ -261,6 +312,29 @@ class TestCrossWallPlanning:
                         break
 
                     time.sleep(0.1)
+
+                # Per-segment churn summary
+                with lock:
+                    seg_far = far_path_count - seg_far_start
+                    seg_local = local_path_count - seg_local_start
+                    seg_wps = len(far_waypoints) - seg_wp_start
+                    # Waypoint churn: how much the FAR planner's waypoint jumped
+                    seg_wp_list = far_waypoints[seg_wp_start:]
+                wp_churn = 0.0
+                if len(seg_wp_list) > 1:
+                    for i in range(1, len(seg_wp_list)):
+                        wp_churn += _distance(
+                            seg_wp_list[i - 1][0],
+                            seg_wp_list[i - 1][1],
+                            seg_wp_list[i][0],
+                            seg_wp_list[i][1],
+                        )
+                far_rate = seg_far / max(elapsed, 1.0)
+                print(
+                    f"[churn] {name}: far_paths={seg_far} ({far_rate:.1f}/s) "
+                    f"local_paths={seg_local} wps={seg_wps} "
+                    f"wp_churn={wp_churn:.1f}m (total wp displacement)"
+                )
 
                 assert reached, (
                     f"{name}: robot did not reach ({gx}, {gy}) within {timeout_sec}s. "

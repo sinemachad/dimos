@@ -14,8 +14,13 @@
 
 """GraphNodes3D: visibility-graph nodes for debug visualization.
 
-On the wire this reuses ``nav_msgs/Path``.  Each pose is a node; the
-``orientation.w`` field encodes the node type:
+**Decode-only visualization helper for FAR planner.**
+
+This type exists to decode debug visualization data published by FAR planner's
+C++ binary (``far_planner_node``).  On the wire it reuses ``nav_msgs/Path``.
+Each pose represents a graph node; the ``orientation.w`` quaternion component is
+**repurposed as a data channel** to encode the node type (it is NOT a valid
+quaternion):
 
     0 = normal nav node
     1 = odom (robot) node
@@ -24,6 +29,17 @@ On the wire this reuses ``nav_msgs/Path``.  Each pose is a node; the
     4 = navpoint (trajectory) node
 
 Rerun visualization renders as ``rr.Points3D`` with type-based coloring.
+
+Why ``msgs/nav_msgs/``?
+    The transport layer discovers message types by their ``msg_name`` attribute
+    (here ``"nav_msgs.GraphNodes3D"``).  Stream auto-connection and LCM topic
+    resolution depend on this module living under ``msgs/nav_msgs/`` so that
+    the ``Out[GraphNodes3D]`` streams declared in ``far_planner.py`` are wired
+    correctly.
+
+See also:
+    - ``ContourPolygons3D`` — contour polygons (``sensor_msgs/PointCloud2``)
+    - ``LineSegments3D`` — graph edge segments (same ``nav_msgs/Path`` pattern)
 """
 
 from __future__ import annotations
@@ -75,9 +91,18 @@ def _sec_nsec(ts: float) -> list[int]:
 
 
 class GraphNodes3D(Timestamped):
-    """Visibility-graph node positions for debug visualization.
+    """Visibility-graph node positions for FAR planner debug visualization.
 
-    Wire format: ``nav_msgs/Path`` where each pose is a node.
+    **Primarily decode-only** — the C++ ``far_planner_node`` produces these
+    messages; the Python side decodes them for Rerun rendering.  ``lcm_encode``
+    is implemented for testing/round-trip convenience but is not used in
+    production.
+
+    Wire format
+    -----------
+    ``nav_msgs/Path`` where each pose is a graph node.  ``orientation.w`` is
+    **hijacked** to store the integer node type (see module docstring for the
+    type map).  The other quaternion components (x, y, z) are unused.
     """
 
     msg_name = "nav_msgs.GraphNodes3D"
@@ -96,6 +121,8 @@ class GraphNodes3D(Timestamped):
         self.nodes = nodes if nodes is not None else []
 
     # ── LCM encode / decode ────────────────────────────────────────────
+    # NOTE: lcm_encode exists for testing / round-trip validation only.
+    # In production the C++ far_planner_node is the sole producer.
 
     def lcm_encode(self) -> bytes:
         lcm_msg = LCMPath()
@@ -114,6 +141,8 @@ class GraphNodes3D(Timestamped):
             pose.pose.position.y = node.y
             pose.pose.position.z = node.z
             pose.pose.orientation = LCMQuaternion()
+            # Hijack orientation.w to carry the node-type integer.
+            # This is NOT a valid quaternion — see module docstring.
             pose.pose.orientation.w = float(node.node_type)
             lcm_msg.poses.append(pose)
 
@@ -136,6 +165,8 @@ class GraphNodes3D(Timestamped):
                     x=pose.pose.position.x,
                     y=pose.pose.position.y,
                     z=pose.pose.position.z,
+                    # orientation.w carries the node-type integer, not a
+                    # quaternion component — see module docstring.
                     node_type=int(pose.pose.orientation.w),
                 )
             )

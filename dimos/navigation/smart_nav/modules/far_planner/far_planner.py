@@ -22,12 +22,16 @@ and outputs intermediate waypoints for the local planner.
 from __future__ import annotations
 
 from pathlib import Path
+import threading
+import time
 
 from dimos_lcm.std_msgs import Bool  # type: ignore[import-untyped]
 
+from dimos.core.core import rpc
 from dimos.core.native_module import NativeModule, NativeModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs.PointStamped import PointStamped
+from dimos.msgs.geometry_msgs.Pose import Pose
 from dimos.msgs.nav_msgs.ContourPolygons3D import ContourPolygons3D
 from dimos.msgs.nav_msgs.GraphNodes3D import GraphNodes3D
 from dimos.msgs.nav_msgs.LineSegments3D import LineSegments3D
@@ -41,9 +45,7 @@ class FarPlannerConfig(NativeModuleConfig):
 
     cwd: str | None = str(Path(__file__).resolve().parent)
     executable: str = "result/bin/far_planner_native"
-    build_command: str | None = (
-        "nix build github:dimensionalOS/dimos-module-far-planner/v0.4.0 --no-write-lock-file"
-    )
+    build_command: str | None = "nix build ~/repos/dimos-module-far-planner --no-write-lock-file"
 
     # C++ binary uses snake_case CLI args.
     cli_name_override: dict[str, str] = {
@@ -99,6 +101,19 @@ class FarPlannerConfig(NativeModuleConfig):
     obs_inflate_size: int = 2
     visualize_ratio: float = 0.4
 
+    # --- Anti-churn params ---
+    # Only switch to a new path if its cost is less than this ratio of the current path cost.
+    # 0.85 = new path must be at least 15% shorter to trigger a switch.
+    path_switch_cost_ratio: float = 0.85
+    # Minimum frames to hold a path before considering a switch.
+    min_path_hold_frames: int = 10
+
+    # TF bridge: query TF for corrected pose and feed it to the C++ binary.
+    use_tf_bridge: bool = True
+    body_frame: str = "body"
+    tf_bridge_rate: float = 30.0
+    cli_exclude: frozenset[str] = frozenset({"use_tf_bridge", "body_frame", "tf_bridge_rate"})
+
 
 class FarPlanner(NativeModule):
     """FAR planner: visibility-graph global route planner.
@@ -132,3 +147,53 @@ class FarPlanner(NativeModule):
     graph_edges: Out[LineSegments3D]
     contour_polygons: Out[ContourPolygons3D]
     nav_boundary: Out[LineSegments3D]
+
+    _bridge_running: bool = False
+    _bridge_thread: threading.Thread | None = None
+
+    @rpc
+    def start(self) -> None:
+        super().start()
+        if self.config.use_tf_bridge:
+            self._bridge_running = True
+            self._bridge_thread = threading.Thread(
+                target=self._tf_odom_bridge, daemon=True, name="tf-bridge-farplanner"
+            )
+            self._bridge_thread.start()
+
+    @rpc
+    def stop(self) -> None:
+        self._bridge_running = False
+        if self._bridge_thread is not None:
+            self._bridge_thread.join(timeout=3.0)
+            self._bridge_thread = None
+        super().stop()
+
+    def _tf_odom_bridge(self) -> None:
+        """Poll TF for corrected pose and publish Odometry for the C++ binary."""
+        rate = self.config.tf_bridge_rate
+        period = 1.0 / rate if rate > 0 else 1.0 / 30.0
+        body = self.config.body_frame
+        while self._bridge_running:
+            t0 = time.monotonic()
+            frame_id = "map"
+            tf = self.tf.get("map", body)
+            if tf is None:
+                frame_id = "odom"
+                tf = self.tf.get("odom", body)
+            if tf is not None:
+                odom = Odometry(
+                    ts=tf.ts,
+                    frame_id=frame_id,
+                    child_frame_id=body,
+                    pose=Pose(
+                        position=[tf.translation.x, tf.translation.y, tf.translation.z],
+                        orientation=[tf.rotation.x, tf.rotation.y, tf.rotation.z, tf.rotation.w],
+                    ),
+                )
+                if self.odometry._transport is not None:
+                    self.odometry._transport.broadcast(None, odom)
+            dt = time.monotonic() - t0
+            sleep = period - dt
+            if sleep > 0:
+                time.sleep(sleep)

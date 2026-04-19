@@ -42,7 +42,6 @@ from dimos.msgs.geometry_msgs.PointStamped import PointStamped
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.nav_msgs.Path import Path
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
-from dimos.navigation.smart_nav.frames import FRAME_BODY, FRAME_MAP, FRAME_ODOM
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
@@ -271,6 +270,10 @@ class SimplePlannerConfig(ModuleConfig):
     # cached path so the local planner never stops on it. Should be
     # larger than LocalPlanner's goal_reached_threshold.
     waypoint_advance_radius: float = 1.0
+    # TF child frame for the robot body.  Modules query the TF tree
+    # for ``map → body_frame`` (or ``odom → body_frame`` as fallback).
+    # Override to ``"sensor"`` for the Unity sim bridge.
+    body_frame: str = "body"
 
 
 class SimplePlanner(Module):
@@ -380,47 +383,39 @@ class SimplePlanner(Module):
 
     # ── TF pose query ───────────────────────────────────────────────────────
 
-    # Ordered list of (parent, child) TF lookups to try for the robot pose.
-    # The first successful lookup wins.  ``body`` is the standard REP-105
-    # child frame; ``sensor`` is used by the Unity sim bridge.
-    _TF_POSE_QUERIES: list[tuple[str, str]] = [
-        (FRAME_MAP, FRAME_BODY),
-        (FRAME_ODOM, FRAME_BODY),
-        (FRAME_MAP, "sensor"),
-    ]
-
     def _query_pose(self) -> bool:
         """Update cached robot position from the TF tree.
 
-        Tries several ``(parent, child)`` pairs in priority order so the
-        planner works both on real hardware (``map → body`` via PGO +
-        FastLio2) and in simulation (``map → sensor`` from the Unity
-        bridge).
+        Prefers ``map → body_frame`` (corrected pose).  Falls back to
+        ``odom → body_frame`` when PGO hasn't published ``map → odom``
+        yet (early startup).  The body frame is set via
+        ``config.body_frame`` so sim blueprints can override it.
 
-        Returns True if a pose was obtained from any chain.
+        Caches the last successful (parent, child) pair so subsequent
+        ticks skip the failing lookup.
         """
-        tf = None
-        for parent, child in self._TF_POSE_QUERIES:
+        child = self.config.body_frame
+        # Always try map first (corrected pose), fall back to odom (startup).
+        for parent in ("map", "odom"):
             tf = self.tf.get(parent, child)
             if tf is not None:
-                break
-        if tf is None:
-            now = time.monotonic()
-            if now - getattr(self, "_last_tf_warn", 0.0) > 5.0:
-                self._last_tf_warn = now
-                buffers = list(self.tf.buffers.keys()) if hasattr(self.tf, "buffers") else []
-                logger.warning(
-                    "TF lookup failed — no robot pose available",
-                    tried=[(p, c) for p, c in self._TF_POSE_QUERIES],
-                    available_frames=buffers,
-                )
-            return False
-        with self._lock:
-            self._robot_x = float(tf.translation.x)
-            self._robot_y = float(tf.translation.y)
-            self._robot_z = float(tf.translation.z)
-            self._has_odom = True
-        return True
+                with self._lock:
+                    self._robot_x = float(tf.translation.x)
+                    self._robot_y = float(tf.translation.y)
+                    self._robot_z = float(tf.translation.z)
+                    self._has_odom = True
+                return True
+        # Both failed — log at low frequency.
+        now = time.monotonic()
+        if now - getattr(self, "_last_tf_warn", 0.0) > 5.0:
+            self._last_tf_warn = now
+            buffers = list(self.tf.buffers.keys()) if hasattr(self.tf, "buffers") else []
+            logger.warning(
+                "TF lookup failed",
+                body_frame=child,
+                available_frames=buffers,
+            )
+        return False
 
     # ── Subscription callbacks ─────────────────────────────────────────────
 
@@ -437,8 +432,8 @@ class SimplePlanner(Module):
             self._current_wp = None
             self._current_wp_is_goal = False
             now = time.time()
-            self.way_point.publish(PointStamped(ts=now, frame_id=FRAME_MAP, x=rx, y=ry, z=rz))
-            self.goal_path.publish(Path(ts=now, frame_id=FRAME_MAP, poses=[]))
+            self.way_point.publish(PointStamped(ts=now, frame_id="map", x=rx, y=ry, z=rz))
+            self.goal_path.publish(Path(ts=now, frame_id="map", poses=[]))
             logger.info("Goal cleared — idle until new goal")
             return
         with self._lock:
@@ -577,7 +572,7 @@ class SimplePlanner(Module):
                 pts[i, 0] = wx
                 pts[i, 1] = wy
                 pts[i, 2] = rz - self.config.ground_offset_below_robot + 0.1
-        self.costmap_cloud.publish(PointCloud2.from_numpy(pts, frame_id=FRAME_MAP, timestamp=now))
+        self.costmap_cloud.publish(PointCloud2.from_numpy(pts, frame_id="map", timestamp=now))
 
     def _publish_from_cached(self, rx: float, ry: float, gz: float, now: float) -> None:
         """Republish a look-ahead waypoint from the cached path.
@@ -597,7 +592,7 @@ class SimplePlanner(Module):
         with self._lock:
             self._current_wp = (wx, wy)
             self._current_wp_is_goal = is_goal
-        self.way_point.publish(PointStamped(ts=now, frame_id=FRAME_MAP, x=wx, y=wy, z=gz))
+        self.way_point.publish(PointStamped(ts=now, frame_id="map", x=wx, y=wy, z=gz))
 
     def _maybe_advance_waypoint(self, rx: float, ry: float, gz: float) -> None:
         """If the robot is close to the current intermediate waypoint, advance it."""
@@ -619,7 +614,7 @@ class SimplePlanner(Module):
             self._current_wp = (wx, wy)
             self._current_wp_is_goal = new_is_goal
         now = time.time()
-        self.way_point.publish(PointStamped(ts=now, frame_id=FRAME_MAP, x=wx, y=wy, z=gz))
+        self.way_point.publish(PointStamped(ts=now, frame_id="map", x=wx, y=wy, z=gz))
 
     def _replan_once(self) -> None:
         # Refresh pose from the TF tree every tick.
@@ -703,21 +698,21 @@ class SimplePlanner(Module):
             with self._lock:
                 self._current_wp = None
                 self._current_wp_is_goal = False
-            self.way_point.publish(PointStamped(ts=now, frame_id=FRAME_MAP, x=rx, y=ry, z=rz))
+            self.way_point.publish(PointStamped(ts=now, frame_id="map", x=rx, y=ry, z=rz))
             self.goal_path.publish(
                 Path(
                     ts=now,
-                    frame_id=FRAME_MAP,
+                    frame_id="map",
                     poses=[
                         PoseStamped(
                             ts=now,
-                            frame_id=FRAME_MAP,
+                            frame_id="map",
                             position=[rx, ry, rz],
                             orientation=[0.0, 0.0, 0.0, 1.0],
                         ),
                         PoseStamped(
                             ts=now,
-                            frame_id=FRAME_MAP,
+                            frame_id="map",
                             position=[gx, gy, gz],
                             orientation=[0.0, 0.0, 0.0, 1.0],
                         ),
@@ -736,12 +731,12 @@ class SimplePlanner(Module):
             poses.append(
                 PoseStamped(
                     ts=now,
-                    frame_id=FRAME_MAP,
+                    frame_id="map",
                     position=[wx, wy, rz],
                     orientation=[0.0, 0.0, 0.0, 1.0],
                 )
             )
-        self.goal_path.publish(Path(ts=now, frame_id=FRAME_MAP, poses=poses))
+        self.goal_path.publish(Path(ts=now, frame_id="map", poses=poses))
 
         # Pick look-ahead waypoint
         wx, wy = self._lookahead(path_world, rx, ry, self.config.lookahead_distance)
@@ -750,7 +745,7 @@ class SimplePlanner(Module):
         with self._lock:
             self._current_wp = (wx, wy)
             self._current_wp_is_goal = is_goal
-        self.way_point.publish(PointStamped(ts=now, frame_id=FRAME_MAP, x=wx, y=wy, z=gz))
+        self.way_point.publish(PointStamped(ts=now, frame_id="map", x=wx, y=wy, z=gz))
 
         # 1 Hz diagnostic: cells in costmap, path length, chosen waypoint
         if now - self._last_diag_print >= 1.0:

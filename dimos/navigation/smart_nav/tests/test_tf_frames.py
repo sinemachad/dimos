@@ -41,21 +41,13 @@ from dimos.msgs.geometry_msgs.Quaternion import Quaternion
 from dimos.msgs.geometry_msgs.Transform import Transform
 from dimos.msgs.geometry_msgs.Vector3 import Vector3
 from dimos.msgs.nav_msgs.Odometry import Odometry
-from dimos.navigation.smart_nav.frames import FRAME_BODY, FRAME_MAP, FRAME_ODOM
 from dimos.protocol.tf.tf import MultiTBuffer
 
-# ─── Frame constants ─────────────────────────────────────────────────────
-
-
-class TestFrameConstants:
-    def test_frame_map(self) -> None:
-        assert FRAME_MAP == "map"
-
-    def test_frame_odom(self) -> None:
-        assert FRAME_ODOM == "odom"
-
-    def test_frame_body(self) -> None:
-        assert FRAME_BODY == "body"
+# Standard frame IDs (inline strings, matching codebase convention)
+FRAME_MAP = "map"
+FRAME_ODOM = "odom"
+FRAME_BODY = "body"
+FRAME_SENSOR = "sensor"
 
 
 # ─── TF chain composition via MultiTBuffer ───────────────────────────────
@@ -303,24 +295,6 @@ class TestPGOTF:
         assert math.isclose(tf_arg.translation.y, 2.0)
         assert math.isclose(tf_arg.ts, 42.0)
 
-    def test_corrected_odom_uses_frame_constants(self) -> None:
-        """_publish_corrected_odom should use FRAME_MAP and FRAME_BODY."""
-        from dimos.navigation.smart_nav.modules.pgo.pgo import PGO
-
-        with patch.object(PGO, "__init__", lambda self, **kw: None):
-            pgo_mod = cast("Any", PGO.__new__(PGO))
-
-        pgo_mod.corrected_odometry = MagicMock()
-
-        r = np.eye(3)
-        t = np.array([5.0, 6.0, 0.0])
-        pgo_mod._publish_corrected_odom(r, t, 99.0)
-
-        pgo_mod.corrected_odometry.publish.assert_called_once()
-        odom_msg: Odometry = pgo_mod.corrected_odometry.publish.call_args[0][0]
-        assert odom_msg.frame_id == FRAME_MAP
-        assert odom_msg.child_frame_id == FRAME_BODY
-
     def test_start_seeds_identity_map_odom(self) -> None:
         """PGO.start() should publish identity map→odom so the chain works immediately."""
         from dimos.navigation.smart_nav.modules.pgo.pgo import PGO, PGOConfig
@@ -342,7 +316,6 @@ class TestPGOTF:
         pgo_mod._tf = MagicMock()
         pgo_mod.odometry = MagicMock()
         pgo_mod.registered_scan = MagicMock()
-        pgo_mod.corrected_odometry = MagicMock()
 
         pgo_mod.start()
 
@@ -360,8 +333,8 @@ class TestPGOTF:
         if pgo_mod._thread:
             pgo_mod._thread.join(timeout=2.0)
 
-    def test_on_scan_publishes_both_odom_and_tf(self) -> None:
-        """After _on_scan, both corrected_odometry and map→odom TF should be published."""
+    def test_on_scan_publishes_tf(self) -> None:
+        """After _on_scan, map→odom TF should be published."""
         from dimos.navigation.smart_nav.modules.pgo.pgo import PGO, PGOConfig, _SimplePGO
 
         with patch.object(PGO, "__init__", lambda self, **kw: None):
@@ -376,21 +349,15 @@ class TestPGOTF:
         pgo_mod._latest_r = np.eye(3)
         pgo_mod._latest_t = np.array([1.0, 2.0, 0.0])
         pgo_mod._latest_time = 1.0
-        pgo_mod.corrected_odometry = MagicMock()
         pgo_mod._tf = MagicMock()
 
-        # Feed a scan with some points
         from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
 
         pts = np.random.default_rng(42).standard_normal((100, 3)).astype(np.float32)
         cloud = PointCloud2.from_numpy(pts, frame_id="map", timestamp=1.0)
         pgo_mod._on_scan(cloud)
 
-        # Both should have been called
-        pgo_mod.corrected_odometry.publish.assert_called_once()
         pgo_mod.tf.publish.assert_called_once()
-
-        # Verify TF is map→odom
         tf_arg = pgo_mod.tf.publish.call_args[0][0]
         assert tf_arg.frame_id == FRAME_MAP
         assert tf_arg.child_frame_id == FRAME_ODOM
@@ -520,6 +487,35 @@ class TestSimplePlannerTF:
         # No goal set, so _replan_once should return early after querying TF
         p._replan_once()
         p.tf.get.assert_called_with(FRAME_MAP, FRAME_BODY)
+
+    def test_body_frame_config_overrides_lookup(self) -> None:
+        """Setting config.body_frame should change which TF child is queried."""
+        from dimos.navigation.smart_nav.modules.simple_planner.simple_planner import (
+            SimplePlannerConfig,
+        )
+
+        p = self._make_planner()
+        p.config = SimplePlannerConfig(body_frame="sensor")
+
+        sensor_tf = Transform(
+            frame_id=FRAME_MAP,
+            child_frame_id="sensor",
+            translation=Vector3(9.0, 8.0, 0.0),
+            rotation=Quaternion(0.0, 0.0, 0.0, 1.0),
+            ts=time.time(),
+        )
+
+        def _side_effect(parent: str, child: str) -> Transform | None:
+            if child == "sensor":
+                return sensor_tf
+            return None
+
+        p.tf.get.side_effect = _side_effect
+
+        result = p._query_pose()
+        assert result is True
+        assert math.isclose(p._robot_x, 9.0)
+        assert math.isclose(p._robot_y, 8.0)
 
     def test_waypoint_uses_frame_map(self) -> None:
         """Published waypoints should use FRAME_MAP as frame_id."""
@@ -742,8 +738,8 @@ class TestSmartNavRemappings:
             "MovementManager should not have an odometry remapping"
         )
 
-    def test_terrain_analysis_still_remapped(self) -> None:
-        """TerrainAnalysis (NativeModule) should still have corrected_odometry remapping."""
+    def test_terrain_analysis_disconnected_from_raw_odom(self) -> None:
+        """TerrainAnalysis odometry should be remapped away from raw FastLio2 output."""
         from dimos.navigation.smart_nav.main import smart_nav
         from dimos.navigation.smart_nav.modules.terrain_analysis.terrain_analysis import (
             TerrainAnalysis,
@@ -751,18 +747,19 @@ class TestSmartNavRemappings:
 
         bp = smart_nav(use_simple_planner=True)
         rmap = bp.remapping_map
+        # Should be remapped to a bridge topic, NOT connected to raw odometry
         assert (TerrainAnalysis, "odometry") in rmap
-        assert rmap[(TerrainAnalysis, "odometry")] == "corrected_odometry"
+        assert rmap[(TerrainAnalysis, "odometry")] != "odometry"
 
-    def test_far_planner_remapped_when_active(self) -> None:
-        """FarPlanner (NativeModule) should have corrected_odometry remapping."""
+    def test_far_planner_disconnected_from_raw_odom(self) -> None:
+        """FarPlanner odometry should be remapped away from raw FastLio2 output."""
         from dimos.navigation.smart_nav.main import smart_nav
         from dimos.navigation.smart_nav.modules.far_planner.far_planner import FarPlanner
 
         bp = smart_nav(use_simple_planner=False)
         rmap = bp.remapping_map
         assert (FarPlanner, "odometry") in rmap
-        assert rmap[(FarPlanner, "odometry")] == "corrected_odometry"
+        assert rmap[(FarPlanner, "odometry")] != "odometry"
 
 
 # ─── PGO correction math ─────────────────────────────────────────────────

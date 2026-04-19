@@ -14,8 +14,31 @@
 
 """LineSegments3D: collection of 3D line segments for graph edge visualization.
 
-On the wire uses ``nav_msgs/Path`` — consecutive pose pairs form segments.
-Renders as ``rr.LineStrips3D`` with each segment as a separate strip.
+**Decode-only visualization helper for FAR planner.**
+
+This type exists to decode debug visualization data published by FAR planner's
+C++ binary (``far_planner_node``).  On the wire it uses ``nav_msgs/Path`` where
+consecutive pose pairs form line segments.  The ``orientation.w`` quaternion
+component is **repurposed as a data channel** to encode traversability (it is
+NOT a valid quaternion):
+
+    1.0 = fully traversable (reachable from robot)
+    0.5 = partially traversable
+    0.0 = non-traversable / unreachable
+
+Rerun visualization renders as ``rr.LineStrips3D`` color-coded by
+traversability (green / yellow / red).
+
+Why ``msgs/nav_msgs/``?
+    The transport layer discovers message types by their ``msg_name`` attribute
+    (here ``"nav_msgs.LineSegments3D"``).  Stream auto-connection and LCM topic
+    resolution depend on this module living under ``msgs/nav_msgs/`` so that
+    the ``Out[LineSegments3D]`` streams declared in ``far_planner.py`` are
+    wired correctly.
+
+See also:
+    - ``GraphNodes3D`` — graph node positions (same ``nav_msgs/Path`` pattern)
+    - ``ContourPolygons3D`` — contour polygons (``sensor_msgs/PointCloud2``)
 """
 
 from __future__ import annotations
@@ -32,10 +55,18 @@ if TYPE_CHECKING:
 
 
 class LineSegments3D(Timestamped):
-    """Line segments for graph edge visualization.
+    """Line segments for FAR planner graph edge visualization.
 
-    Wire format: ``nav_msgs/Path`` — consecutive pose pairs are segments.
-    ``orientation.w`` encodes traversability: 1.0=traversable, 0.5=partial, 0.0=unreachable.
+    **Decode-only** — the C++ ``far_planner_node`` produces these messages;
+    the Python side only decodes them for Rerun rendering.  ``lcm_encode``
+    intentionally raises ``NotImplementedError``.
+
+    Wire format
+    -----------
+    ``nav_msgs/Path`` where consecutive pose pairs form line segments.
+    ``orientation.w`` is **hijacked** to carry traversability as a float
+    (1.0 = traversable, 0.5 = partial, 0.0 = unreachable).  The other
+    quaternion components (x, y, z) are unused.
     """
 
     msg_name = "nav_msgs.LineSegments3D"
@@ -57,6 +88,10 @@ class LineSegments3D(Timestamped):
         self._traversability = traversability or [1.0] * len(self._segments)
 
     def lcm_encode(self) -> bytes:
+        # This type is strictly decode-only.  The C++ far_planner_node is the
+        # sole producer of these messages; there is no Python code path that
+        # needs to encode them.  Raising here makes that contract explicit and
+        # prevents silent misuse.
         raise NotImplementedError("Encoded on C++ side")
 
     @classmethod
@@ -76,6 +111,8 @@ class LineSegments3D(Timestamped):
                     (p2.pose.position.x, p2.pose.position.y, p2.pose.position.z),
                 )
             )
+            # orientation.w carries traversability as a float, not a
+            # quaternion component — see module docstring.
             traversability.append(p1.pose.orientation.w)
         return cls(
             ts=header_ts, frame_id=frame_id, segments=segments, traversability=traversability

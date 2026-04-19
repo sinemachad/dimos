@@ -20,6 +20,7 @@ to autonomously explore unknown environments.
 
 from __future__ import annotations
 
+from dimos.core.core import rpc
 from dimos.core.native_module import NativeModule, NativeModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs.PointStamped import PointStamped
@@ -60,3 +61,11 @@ class TarePlanner(NativeModule):
     registered_scan: In[PointCloud2]
     odometry: In[Odometry]
     way_point: Out[PointStamped]
+
+    @rpc
+    def start(self) -> None:
+        super().start()
+
+    @rpc
+    def stop(self) -> None:
+        super().stop()

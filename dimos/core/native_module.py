@@ -75,8 +75,7 @@ if sys.platform.startswith("linux"):
         that touches the threading runtime (allocating, importing) is not.
         """
         if _LIBC.prctl(_PR_SET_PDEATHSIG, signal.SIGTERM) != 0:
-            err = ctypes.get_errno()
-            raise OSError(err, f"prctl(PR_SET_PDEATHSIG) failed: {os.strerror(err)}")
+            os._exit(127)  # safe: no Python runtime involvement after fork
 else:
     _child_preexec_linux = None  # type: ignore[assignment]
 
@@ -266,7 +265,7 @@ class NativeModule(Module):
                     pid=proc.pid,
                 )
                 proc.kill()
-                proc.wait(timeout=self.config.shutdown_timeout)
+                proc.wait(timeout=5.0)  # SIGKILL should always succeed quickly
 
         if watchdog is not None and watchdog is not threading.current_thread():
             watchdog.join(timeout=self.config.shutdown_timeout)
@@ -341,6 +340,11 @@ class NativeModule(Module):
             # Use the captured pid rather than self._process.pid — stop() can
             # null self._process out from under us between the check and the
             # attribute read.
+            #
+            # NOTE: JSON log parsing (LogFormat.JSON) was intentionally removed
+            # in this refactor — it was unused in practice and added complexity.
+            # If a native module needs structured logging, the preferred path is
+            # to emit plain text and let the Python logger handle formatting.
             log_fn(line, module=self._mod_label, pid=pid)
         stream.close()
 

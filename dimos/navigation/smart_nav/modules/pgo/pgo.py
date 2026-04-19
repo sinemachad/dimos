@@ -39,7 +39,6 @@ from dimos.msgs.geometry_msgs.Transform import Transform
 from dimos.msgs.geometry_msgs.Vector3 import Vector3
 from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
-from dimos.navigation.smart_nav.frames import FRAME_BODY, FRAME_MAP, FRAME_ODOM
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
@@ -362,10 +361,13 @@ class PGO(Module):
     Detects keyframes from odometry, searches for loop closures,
     optimizes with iSAM2, and publishes corrected poses + global map.
 
+    The primary pose interface is the TF tree: PGO publishes the
+    ``map → odom`` correction transform so that any module can obtain
+    the loop-closure-corrected pose via ``self.tf.get("map", "body")``.
+
     Ports:
         registered_scan (In[PointCloud2]): World-frame registered point cloud.
         odometry (In[Odometry]): Current pose estimate from SLAM.
-        corrected_odometry (Out[Odometry]): Loop-closure-corrected pose.
         global_map (Out[PointCloud2]): Accumulated keyframe map.
     """
 
@@ -373,7 +375,6 @@ class PGO(Module):
 
     registered_scan: In[PointCloud2]
     odometry: In[Odometry]
-    corrected_odometry: Out[Odometry]
     global_map: Out[PointCloud2]
 
     def __init__(self, **kwargs: Any) -> None:
@@ -384,6 +385,7 @@ class PGO(Module):
         # from _on_scan and _publish_loop threads.
         self._pgo_lock = threading.Lock()
         self._running = False
+        self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._pgo: _SimplePGO | None = None
         # Latest odom
@@ -395,7 +397,7 @@ class PGO(Module):
 
     def __getstate__(self) -> dict[str, Any]:
         state: dict[str, Any] = super().__getstate__()  # type: ignore[no-untyped-call]
-        for k in ("_lock", "_pgo_lock", "_thread", "_pgo"):
+        for k in ("_lock", "_pgo_lock", "_stop_event", "_thread", "_pgo"):
             state.pop(k, None)
         return state
 
@@ -403,6 +405,7 @@ class PGO(Module):
         super().__setstate__(state)
         self._lock = threading.Lock()
         self._pgo_lock = threading.Lock()
+        self._stop_event = threading.Event()
         self._thread = None
         self._pgo = None
 
@@ -423,11 +426,15 @@ class PGO(Module):
     @rpc
     def stop(self) -> None:
         self._running = False
+        self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=3.0)
         super().stop()
 
     def _on_odom(self, msg: Odometry) -> None:
+        # Decompose to R/t matrices — GTSAM iSAM2 operates on Pose3
+        # (rotation matrix + translation vector), so this conversion is
+        # an algorithm requirement, not a TF concern.
         q = [
             msg.pose.orientation.x,
             msg.pose.orientation.y,
@@ -475,28 +482,10 @@ class PGO(Module):
                     position=f"({t_local[0]:.1f}, {t_local[1]:.1f}, {t_local[2]:.1f})",
                 )
 
-            # Publish corrected odometry
-            r_corr, t_corr = pgo.get_corrected_pose(r_local, t_local)
+            # Publish map→odom correction to TF
             r_offset = pgo._r_offset.copy()
             t_offset = pgo._t_offset.copy()
-        self._publish_corrected_odom(r_corr, t_corr, ts)
         self._publish_map_odom_tf(r_offset, t_offset, ts)
-
-    def _publish_corrected_odom(self, r: np.ndarray, t: np.ndarray, ts: float) -> None:
-        from dimos.msgs.geometry_msgs.Pose import Pose
-
-        q = Rotation.from_matrix(r).as_quat()  # [x,y,z,w]
-
-        odom = Odometry(
-            ts=ts,
-            frame_id=FRAME_MAP,
-            child_frame_id=FRAME_BODY,
-            pose=Pose(
-                position=[float(t[0]), float(t[1]), float(t[2])],
-                orientation=[float(q[0]), float(q[1]), float(q[2]), float(q[3])],
-            ),
-        )
-        self.corrected_odometry.publish(odom)
 
     def _publish_map_odom_tf(self, r_offset: np.ndarray, t_offset: np.ndarray, ts: float) -> None:
         """Publish the ``map → odom`` correction transform to the TF tree.
@@ -507,8 +496,8 @@ class PGO(Module):
         q = Rotation.from_matrix(r_offset).as_quat()  # [x,y,z,w]
         self.tf.publish(
             Transform(
-                frame_id=FRAME_MAP,
-                child_frame_id=FRAME_ODOM,
+                frame_id="map",
+                child_frame_id="odom",
                 translation=Vector3(float(t_offset[0]), float(t_offset[1]), float(t_offset[2])),
                 rotation=Quaternion(float(q[0]), float(q[1]), float(q[2]), float(q[3])),
                 ts=ts,
@@ -531,7 +520,7 @@ class PGO(Module):
                     cloud_np = pgo.build_global_map(self.config.global_map_voxel_size)
                 if len(cloud_np) > 0:
                     self.global_map.publish(
-                        PointCloud2.from_numpy(cloud_np, frame_id=FRAME_MAP, timestamp=now)
+                        PointCloud2.from_numpy(cloud_np, frame_id="map", timestamp=now)
                     )
                     logger.debug(
                         "Global map published",
@@ -542,4 +531,4 @@ class PGO(Module):
 
             elapsed = time.monotonic() - t0
             sleep_time = max(0.1, interval - elapsed)
-            time.sleep(sleep_time)
+            self._stop_event.wait(timeout=sleep_time)

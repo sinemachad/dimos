@@ -23,19 +23,18 @@ Full navigation stack on real hardware with:
 - FastLio2 SLAM from Livox Mid-360 lidar
 - G1HighLevelDdsSdk for robot velocity commands
 
-Odometry routing (per CMU ICRA 2022 Fig. 11):
-- Local path modules (LocalPlanner, PathFollower, SensorScanGen):
-  use raw odometry — they follow paths in the local odometry frame.
-- Global/terrain modules (FarPlanner, MovementManager, TerrainAnalysis):
-  use PGO corrected_odometry — they need globally consistent positions
-  for terrain classification, visibility graphs, and goal coordinates.
+Pose routing via TF tree (per CMU ICRA 2022 Fig. 11):
+- PGO publishes map→odom correction to TF.  FastLio2 publishes odom→body.
+- Global planners (MovementManager) query self.tf.get("map", "body").
+- NativeModules (FarPlanner, TerrainAnalysis, LocalPlanner, PathFollower) receive
+  odometry via a TF-to-Odometry bridge in their Python wrappers.
 
 Data flow:
-    Click → MovementManager (corrected_odom) → goal → FarPlanner (corrected_odom)
+    Click → MovementManager (TF: map→body) → goal → FarPlanner (TF bridge)
     → way_point → LocalPlanner (raw odom) → path → PathFollower (raw odom)
     → nav_cmd_vel → MovementManager → cmd_vel → G1HighLevelDdsSdk
 
-    registered_scan + odometry → PGO → corrected_odometry + global_map
+    registered_scan + odometry → PGO → map→odom TF + global_map
 """
 
 from __future__ import annotations
@@ -43,9 +42,9 @@ from __future__ import annotations
 import os
 
 from dimos.core.coordination.blueprints import autoconnect
+from dimos.core.global_config import global_config
 from dimos.hardware.sensors.lidar.fastlio2.module import FastLio2
 from dimos.navigation.smart_nav.main import smart_nav, smart_nav_rerun_config
-from dimos.core.global_config import global_config
 from dimos.robot.unitree.g1.config import G1
 from dimos.robot.unitree.g1.effectors.high_level.dds_sdk import G1HighLevelDdsSdk
 from dimos.robot.unitree.g1.g1_rerun import (
@@ -66,6 +65,7 @@ unitree_g1_nav_onboard = (
         smart_nav(
             use_simple_planner=True,
             vehicle_height=G1.height_clearance,
+            vehicle_width=G1.width_clearance,
             terrain_analysis={
                 "obstacle_height_threshold": 0.01,
                 "ground_height_threshold": 0.01,

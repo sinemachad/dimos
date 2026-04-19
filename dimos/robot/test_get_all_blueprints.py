@@ -12,17 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Standard TF frame IDs for the SmartNav navigation stack.
+from __future__ import annotations
 
-Follows the ROS REP-105 frame convention:
+import pytest
 
-    map → odom → body
+from dimos.robot.get_all_blueprints import get_by_name
 
-- **map**: Global, loop-closure-corrected frame (published by PGO).
-- **odom**: Continuous, locally smooth frame with no jumps (published by FastLio2).
-- **body**: Robot body / IMU frame.
-"""
 
-FRAME_MAP = "map"
-FRAME_ODOM = "odom"
-FRAME_BODY = "body"
+def test_resolve_string_blueprint():
+    bp = get_by_name("demo-mcp-stress-test")
+    assert bp is not None
+
+
+def test_resolve_string_module():
+    bp = get_by_name("camera-module")
+    assert bp is not None
+
+
+def test_resolve_unknown_name():
+    with pytest.raises(ValueError, match="Unknown blueprint or module"):
+        get_by_name("nonexistent-blueprint-xyz")

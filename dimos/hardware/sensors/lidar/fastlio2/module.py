@@ -60,8 +60,8 @@ from dimos.msgs.geometry_msgs.Transform import Transform
 from dimos.msgs.geometry_msgs.Vector3 import Vector3
 from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
-from dimos.navigation.smart_nav.frames import FRAME_BODY, FRAME_ODOM
 from dimos.spec import mapping, perception
+from dimos.utils.generic import get_local_ips as _get_local_ip_tuples
 from dimos.utils.logging_config import setup_logger
 
 _CONFIG_DIR = Path(__file__).parent / "config"
@@ -70,34 +70,7 @@ _logger = setup_logger()
 
 def _get_local_ips() -> list[str]:
     """Return all IPv4 addresses assigned to local interfaces."""
-    ips: list[str] = []
-    try:
-        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            addr = str(info[4][0])
-            if addr not in ips:
-                ips.append(addr)
-    except socket.gaierror:
-        pass
-    # Also grab addresses via DGRAM trick for interfaces without DNS
-    try:
-        import subprocess
-
-        out = subprocess.check_output(
-            ["ip", "-4", "-o", "addr", "show"],
-            timeout=5,
-            stderr=subprocess.DEVNULL,
-        ).decode()
-        for line in out.splitlines():
-            # e.g. "2: eth0    inet 192.168.123.5/24 ..."
-            parts = line.split()
-            for i, p in enumerate(parts):
-                if p == "inet" and i + 1 < len(parts):
-                    addr = parts[i + 1].split("/")[0]
-                    if addr not in ips:
-                        ips.append(addr)
-    except Exception:
-        pass
-    return ips
+    return [ip for ip, _iface in _get_local_ip_tuples()]
 
 
 def _find_candidate_ips(lidar_ip: str, local_ips: list[str]) -> list[str]:
@@ -131,8 +104,8 @@ class FastLio2Config(NativeModuleConfig):
     # Frame IDs for output messages.  "odom" reflects that FastLio2 provides
     # locally-smooth, continuous odometry (no loop-closure jumps).  PGO
     # publishes the map→odom correction via TF.
-    frame_id: str = FRAME_ODOM
-    child_frame_id: str = FRAME_BODY
+    frame_id: str = "odom"
+    child_frame_id: str = "body"
 
     # FAST-LIO internal processing rates
     msr_freq: float = 50.0
@@ -220,14 +193,22 @@ class FastLio2(NativeModule, perception.Lidar, perception.Odometry, mapping.Glob
         super().start()
         # Subscribe to our own odometry output so we can mirror each
         # pose update into the TF tree as an odom→body transform.
+        # This works because the C++ binary and the Python wrapper share
+        # the same LCM multicast group — the transport is always LCM for
+        # NativeModule streams.  If a non-LCM transport is ever used,
+        # this subscribe call would need to be adapted.
         self.odometry.transport.subscribe(self._on_odom_for_tf, self.odometry)
+
+    @rpc
+    def stop(self) -> None:
+        super().stop()
 
     def _on_odom_for_tf(self, msg: Odometry) -> None:
         """Publish the SLAM pose as an ``odom → body`` TF transform."""
         self.tf.publish(
             Transform(
-                frame_id=FRAME_ODOM,
-                child_frame_id=FRAME_BODY,
+                frame_id="odom",
+                child_frame_id="body",
                 translation=Vector3(
                     msg.pose.position.x,
                     msg.pose.position.y,

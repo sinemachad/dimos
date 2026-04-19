@@ -88,8 +88,8 @@ When `stop()` is called, the process receives SIGTERM. If it doesn't exit within
 | `extra_args`       | `list[str]`      | `[]`          | Additional CLI arguments appended after auto-generated ones |
 | `extra_env`        | `dict[str, str]` | `{}`          | Extra environment variables for the subprocess              |
 | `shutdown_timeout` | `float`          | `10.0`        | Seconds to wait for SIGTERM before SIGKILL                  |
-| `log_format`       | `LogFormat`      | `TEXT`        | How to parse subprocess output (`TEXT` or `JSON`)           |
 | `cli_exclude`      | `frozenset[str]` | `frozenset()` | Config fields to skip when generating CLI args              |
+| `cli_name_override`| `dict[str, str]` | `{}`          | Map field names to custom CLI arg names (bypasses auto snake_case) |
 
 ### Auto CLI arg generation
 
@@ -97,10 +97,6 @@ Any field you add to your config subclass automatically becomes a `--name value`
 
 ```python skip
 from pydantic import Field
-
-class LogFormat(enum.Enum):
-    TEXT = "text"
-    JSON = "json"
 
 class MyConfig(NativeModuleConfig):
     executable: str = "./build/my_module" # relative or absolute path to your executable
@@ -161,23 +157,8 @@ NativeModule pipes subprocess stdout and stderr through structlog:
 - **stdout** is logged at `info` level.
 - **stderr** is logged at `warning` level.
 
-### JSON log format
-
-If your native binary outputs structured JSON lines, set `log_format=LogFormat.JSON`:
-
-```python skip
-class MyConfig(NativeModuleConfig):
-    executable: str = "./build/my_module"
-    log_format: LogFormat = LogFormat.JSON
-```
-
-The module will parse each line as JSON and feed the key-value pairs into structlog. The `event` key becomes the log message:
-
-```json
-{"event": "sensor initialized", "device": "/dev/ttyUSB0", "baud": 115200}
-```
-
-Malformed lines fall back to plain text logging.
+All subprocess output is logged as plain text. stdout lines are logged at `info`
+level; stderr lines at `warning` level.
 
 ## Writing the C++ side
 

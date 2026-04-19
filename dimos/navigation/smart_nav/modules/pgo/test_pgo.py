@@ -516,8 +516,9 @@ class TestPGOWrapper:
         annotations = PGO.__annotations__
         assert "registered_scan" in annotations
         assert "odometry" in annotations
-        assert "corrected_odometry" in annotations
         assert "global_map" in annotations
+        # corrected_odometry was removed — PGO now publishes map→odom via TF
+        assert "corrected_odometry" not in annotations
 
     def test_pgo_config_defaults(self):
         """PGO config should have sensible defaults."""

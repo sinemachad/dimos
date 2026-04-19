@@ -14,10 +14,24 @@
 
 """ContourPolygons3D: filled 2D contour polygons in 3D space.
 
-On the wire this uses ``sensor_msgs/PointCloud2``.  Each point's
-``intensity`` field encodes its polygon id.  The Python side groups
-points by id, ear-clips each polygon into triangles, and renders via
-``rr.Mesh3D``.
+**Decode-only visualization helper for FAR planner.**
+
+This type exists to decode debug visualization data published by FAR planner's
+C++ binary (``far_planner_node``).  The C++ side encodes contour polygon data as
+``sensor_msgs/PointCloud2`` messages, repurposing each point's ``intensity``
+field to encode its polygon id (not a real intensity value).  The Python side
+groups points by id and renders polygon outlines via ``rr.LineStrips3D``.
+
+Why ``msgs/nav_msgs/``?
+    The transport layer discovers message types by their ``msg_name`` attribute
+    (here ``"nav_msgs.ContourPolygons3D"``).  Stream auto-connection and LCM
+    topic resolution depend on this module living under ``msgs/nav_msgs/`` so
+    that the ``Out[ContourPolygons3D]`` streams declared in
+    ``far_planner.py`` are wired correctly.
+
+See also:
+    - ``GraphNodes3D`` — graph node positions (same pattern, ``nav_msgs/Path``)
+    - ``LineSegments3D`` — graph edge segments (same pattern, ``nav_msgs/Path``)
 """
 
 from __future__ import annotations
@@ -32,10 +46,15 @@ if TYPE_CHECKING:
 
 
 class ContourPolygons3D(Timestamped):
-    """Filled contour polygons for debug visualization.
+    """Filled contour polygons for FAR planner debug visualization.
 
-    Wire format: ``sensor_msgs/PointCloud2`` where each point's
-    intensity encodes its polygon id.
+    **Decode-only** — the C++ ``far_planner_node`` produces these messages;
+    the Python side only decodes them for Rerun rendering.
+
+    Wire format
+    -----------
+    ``sensor_msgs/PointCloud2`` where each point's ``intensity`` field is
+    **repurposed** to encode its polygon id (not a real intensity value).
     """
 
     msg_name = "nav_msgs.ContourPolygons3D"
@@ -54,6 +73,8 @@ class ContourPolygons3D(Timestamped):
         self._raw_bytes = raw_bytes
 
     def lcm_encode(self) -> bytes:
+        # Encoding is a raw-bytes passthrough — this type is decode-only in
+        # practice.  The C++ far_planner_node is the sole producer.
         if self._raw_bytes is None:
             raise ValueError("No data to encode")
         return self._raw_bytes
