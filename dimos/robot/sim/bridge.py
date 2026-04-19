@@ -54,6 +54,7 @@ from dimos.constants import DEFAULT_THREAD_JOIN_TIMEOUT
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
+from dimos.msgs.geometry_msgs.Pose import Pose
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.geometry_msgs.Quaternion import Quaternion
 from dimos.msgs.geometry_msgs.Transform import Transform
@@ -522,19 +523,21 @@ class DimSimBridge(Module):
             try:
                 if self._lcm:
                     self._lcm.handle_timeout(100)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"LCM handle error: {e}")
 
     def _on_lcm_odom(self, channel: str, data: bytes) -> None:
         """Convert PoseStamped → Odometry and publish + TF."""
         try:
             ps = PoseStamped.lcm_decode(data)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Odom decode error: {e}")
             return
 
         now = time.time()
         x, y, z = ps.x, ps.y, ps.z
-        qx, qy, qz, qw = ps.qx, ps.qy, ps.qz, ps.qw
+        orient = ps.orientation
+        qx, qy, qz, qw = orient.x, orient.y, orient.z, orient.w
 
         yaw = math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
 
@@ -561,11 +564,20 @@ class DimSimBridge(Module):
         self._prev_y = y
         self._prev_yaw = yaw
 
+        # Build Odometry with proper Pose and Twist objects
+        pose = Pose()
+        pose.position = Vector3(x, y, z)
+        pose.orientation = Quaternion(qx, qy, qz, qw)
+        odom_twist = Twist()
+        odom_twist.linear = Vector3(vx, vy, 0.0)
+        odom_twist.angular = Vector3(0.0, 0.0, vyaw)
         self.odometry.publish(
             Odometry(
-                ts=ps.ts, frame_id="world", child_frame_id="base_link",
-                x=x, y=y, z=z, qx=qx, qy=qy, qz=qz, qw=qw,
-                vx=vx, vy=vy, vz=0.0, wx=0.0, wy=0.0, wz=vyaw,
+                ts=ps.ts,
+                frame_id="world",
+                child_frame_id="base_link",
+                pose=pose,
+                twist=odom_twist,
             )
         )
 
@@ -573,15 +585,15 @@ class DimSimBridge(Module):
         self.tf.publish(
             Transform(
                 ts=ps.ts, parent_frame_id="world", child_frame_id="base_link",
-                translation=Vector3(x=x, y=y, z=z),
-                rotation=Quaternion(x=qx, y=qy, z=qz, w=qw),
+                translation=Vector3(x, y, z),
+                rotation=Quaternion(qx, qy, qz, qw),
             )
         )
         self.tf.publish(
             Transform(
                 ts=ps.ts, parent_frame_id="base_link", child_frame_id="sensor",
-                translation=Vector3(x=0.3, y=0.0, z=0.0),
-                rotation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+                translation=Vector3(0.3, 0.0, 0.0),
+                rotation=Quaternion(0.0, 0.0, 0.0, 1.0),
             )
         )
 

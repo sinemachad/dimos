@@ -123,7 +123,6 @@ unitree_go2_dimsim = (
         with_vis,
         DimSimBridge.blueprint(
             scene="apt",
-            local=True,
             vehicle_height=0.3,
         ),
         VoxelGridMapper.blueprint(voxel_size=0.1),
