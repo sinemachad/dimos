@@ -70,6 +70,22 @@ logger = setup_logger()
 _GITHUB_REPO = "jeff-hykin/DimSim"
 _RELEASES_API = f"https://api.github.com/repos/{_GITHUB_REPO}/releases/latest"
 
+
+def _detect_gpu() -> bool:
+    """Check if a GPU is available for headless rendering."""
+    # Check for NVIDIA GPU via nvidia-smi
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return False
+
+
 # Camera defaults (DimSim: 640x288, configurable FOV)
 _CAM_W = 640
 _CAM_H = 288
@@ -314,7 +330,15 @@ class DimSimBridge(Module):
             args.extend(["--camera-fov", str(camera_fov)])
 
         if os.environ.get("DIMSIM_HEADLESS", "").strip() in ("1", "true"):
-            render = os.environ.get("DIMSIM_RENDER", "cpu").strip()
+            explicit_render = os.environ.get("DIMSIM_RENDER", "").strip()
+            if explicit_render:
+                render = explicit_render
+            elif _detect_gpu():
+                render = "gpu"
+                logger.info("GPU detected — using GPU rendering for headless DimSim")
+            else:
+                render = "cpu"
+                logger.info("No GPU detected — using CPU rendering (SwiftShader)")
             args.extend(["--headless", "--render", render])
 
         channels = os.environ.get("DIMSIM_CHANNELS", "").strip()
