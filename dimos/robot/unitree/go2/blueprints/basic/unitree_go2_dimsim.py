@@ -25,27 +25,10 @@ from dimos.core.coordination.blueprints import autoconnect
 from dimos.core.global_config import global_config
 from dimos.mapping.costmapper import CostMapper
 from dimos.mapping.voxels import VoxelGridMapper
-from dimos.msgs.sensor_msgs.Image import Image
 from dimos.navigation.replanning_a_star.module import ReplanningAStarPlanner
-from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.robot.sim.bridge import DimSimBridge
+from dimos.robot.sim.jpeg_lcm import SimJpegLCM
 from dimos.web.websocket_vis.websocket_vis_module import WebsocketVisModule
-
-
-class _SimLCM(LCM):  # type: ignore[misc]
-    """LCM that JPEG-decodes image topics (with fallback to standard decode)."""
-
-    _JPEG_TOPICS = frozenset({"/color_image"})
-
-    def decode(self, msg: bytes, topic: Any) -> Any:  # type: ignore[override]
-        topic_str = getattr(topic, "topic", "") or ""
-        bare_topic = topic_str.split("#")[0]
-        if bare_topic in self._JPEG_TOPICS:
-            try:
-                return Image.lcm_jpeg_decode(msg)
-            except ValueError:
-                return super().decode(msg, topic)
-        return super().decode(msg, topic)
 
 
 def _go2_sim_rerun_blueprint() -> Any:
@@ -90,7 +73,6 @@ def _static_base_link(rr: Any) -> list[Any]:
         rr.Boxes3D(
             half_sizes=[0.35, 0.155, 0.2],
             colors=[(0, 255, 127)],
-            fill_mode="wireframe",
         ),
         rr.Transform3D(parent_frame="tf#/base_link"),
     ]
@@ -98,8 +80,9 @@ def _static_base_link(rr: Any) -> list[Any]:
 
 rerun_config = {
     "blueprint": _go2_sim_rerun_blueprint,
-    "pubsubs": [_SimLCM()],
+    "pubsubs": [SimJpegLCM()],
     "visual_override": {
+        "world/camera_info": DimSimBridge.rerun_suppress_camera_info,
         "world/color_image": _convert_color_image,
         "world/navigation_costmap": _convert_navigation_costmap,
     },

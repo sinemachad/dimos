@@ -32,6 +32,13 @@ Smoothness metrics per waypoint:
   - progress_rate: fraction of samples where robot got closer to goal
   - cmd_vel_hz: planner cmd_vel rate (too high = churning)
 
+Assertions:
+  - Hard assert: Phase 1 (open corridor) must pass — baseline sim health.
+  - Soft: later phases log metrics for all waypoints but don't fail the
+    test, so planner regressions show up as metric degradation rather
+    than binary pass/fail. This lets the test run in CI without blocking
+    on planner tuning while still collecting smoothness data.
+
 Run::
 
     DIMSIM_LOCAL=1 pytest dimos/e2e_tests/test_dimsim_cross_wall.py -v -s -m slow -o "addopts="
