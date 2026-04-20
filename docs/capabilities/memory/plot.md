@@ -325,12 +325,12 @@ near_images = images.near(meaningful_peaks.first().pose_stamped, radius=2.5) \
 
 drawing = Space()
 
-# here we run our global mapper only on lidar frames around the POI
-drawing.add(
-   near_images.map(lambda obs: store.streams.lidar.at(obs.ts).last()) \
+global_map = near_images.map(lambda obs: store.streams.lidar.at(obs.ts).last()) \
    .transform(VoxelMapTransformer()) \
-   .last().data)
+   .last().data
 
+# here we run our global mapper only on lidar frames around the POI
+drawing.add(global_map)
 drawing.add(near_images)
 drawing.add(meaningful_peaks.first().pose_stamped, color=color.green)
 
@@ -339,20 +339,65 @@ detections = (near_images
     .filter(lambda obs: len(obs.data) > 0)
     .cache())
 
+# we mark poses that actually detected something with a dot
 drawing.add(detections.map(lambda detection: Point(detection.pose_stamped, color=color.green)))
 
 drawing.to_svg("assets/peak_space.svg")
 
 m = mosaic(detections)
 m.data.save("assets/plants_peak_detections.png")
-
-
 ```
 
 <!--Result:-->
 ```
-08:45:35.360 [inf][dimos/mapping/voxels.py       ] VoxelGrid using device: CUDA:0
+09:09:53.506 [inf][dimos/mapping/voxels.py       ] VoxelGrid using device: CUDA:0
 ```
 
 ![output](assets/peak_space.svg)
 ![output](assets/plants_peak_detections.png)
+
+
+```python session=robotdata
+from dimos.perception.detection.type.detection3d.pointcloud import Detection3DPC
+from dimos.robot.unitree.go2.connection import _camera_info_static as go2_camerainfo
+from dimos.memory2.vis.space.elements import Box3D
+from dimos.msgs.geometry_msgs.Pose import Pose
+from dimos.msgs.geometry_msgs.Transform import Transform
+from dimos.msgs.geometry_msgs.Vector3 import Vector3
+from dimos.msgs.geometry_msgs.Quaternion import Quaternion
+
+drawing = Space()
+
+drawing.add(global_map)
+drawing.add(detections)
+
+# static go2 camera mount: base_link -> camera_link -> camera_optical
+base_to_optical = (
+    Transform(translation=Vector3(0.3, 0, 0), rotation=Quaternion(0, 0, 0, 1),
+              frame_id="base_link", child_frame_id="camera_link")
+    + Transform(translation=Vector3(0, 0, 0), rotation=Quaternion(-0.5, 0.5, -0.5, 0.5),
+                frame_id="camera_link", child_frame_id="camera_optical")
+)
+
+camera_info = go2_camerainfo()
+
+for obs in detections:
+    world_from_optical = Transform.from_pose("base_link", obs.pose_stamped) + base_to_optical
+    world_to_optical = -world_from_optical
+    for det2d in obs.data:
+        det3d = Detection3DPC.from_2d(det2d, global_map, camera_info, world_to_optical)
+        if det3d is not None:
+            aabb = det3d.get_bounding_box()
+            c, e = aabb.get_center(), aabb.get_extent()
+            drawing.add(Box3D(
+                center=Pose(float(c[0]), float(c[1]), float(c[2])),
+                size=Vector3(float(e[0]), float(e[1]), float(e[2])),
+                color=color.green, label="plant",
+            ))
+
+drawing.to_svg("assets/peak_detections.svg")
+
+```
+
+
+![output](assets/peak_detections.svg)
