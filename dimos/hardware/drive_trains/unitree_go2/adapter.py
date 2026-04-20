@@ -30,7 +30,7 @@ from dataclasses import dataclass
 import json
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
     MotionSwitcherClient,
@@ -102,8 +102,8 @@ class UnitreeGo2TwistAdapter:
         dof: Must be 3 for Go2. ValueError otherwise.
         speed_level: SportClient speed envelope. -1 = slow, 0 = normal,
             1 = fast (default, max). Applied once after FreeWalk succeeds.
-            May be ignored in non-'normal' modes (mcf runs its own planner).
-            Change at runtime via set_speed_level().
+            Rage Mode's envelope (_RAGE_UP_VX etc.) overrides this when
+            rage is on. Change at runtime via set_speed_level().
         rage_mode: If True (default), enable Rage Mode at the end of
             connect(). Widens the forward envelope to ~2.5 m/s by
             routing velocity commands through the
@@ -261,10 +261,12 @@ class UnitreeGo2TwistAdapter:
             with session.lock:
                 session.client.StandDown()
             time.sleep(0.3)
+        # Best-effort teardown — never raise out of disconnect().
         except Exception as e:
             logger.error(f"[Go2] Error during disconnect: {e}")
 
         if session.state_sub is not None:
+            # Same: must not raise from teardown.
             try:
                 session.state_sub.Close()
             except Exception as e:
@@ -293,16 +295,12 @@ class UnitreeGo2TwistAdapter:
         with session.lock:
             if session.latest_state is None:
                 return [0.0, 0.0, 0.0]
-            try:
-                state = session.latest_state
-                return [
-                    float(state.velocity[0]),
-                    float(state.velocity[1]),
-                    float(state.imu_state.gyroscope[2]),
-                ]
-            except Exception as e:
-                logger.warning(f"[Go2] Error reading velocities: {e}")
-                return [0.0, 0.0, 0.0]
+            state = session.latest_state
+            return [
+                float(state.velocity[0]),
+                float(state.velocity[1]),
+                float(state.imu_state.gyroscope[2]),
+            ]
 
     def read_odometry(self) -> list[float] | None:
         """Measured pose [x, y, theta] from SportModeState_.
@@ -317,16 +315,12 @@ class UnitreeGo2TwistAdapter:
         with session.lock:
             if session.latest_state is None:
                 return None
-            try:
-                state = session.latest_state
-                return [
-                    float(state.position[0]),
-                    float(state.position[1]),
-                    float(state.imu_state.rpy[2]),
-                ]
-            except Exception as e:
-                logger.error(f"[Go2] Error reading odometry: {e}")
-                return None
+            state = session.latest_state
+            return [
+                float(state.position[0]),
+                float(state.position[1]),
+                float(state.imu_state.rpy[2]),
+            ]
 
     def write_velocities(self, velocities: list[float]) -> bool:
         """Send a Twist command [vx, vy, wz] to the Go2.
@@ -379,13 +373,9 @@ class UnitreeGo2TwistAdapter:
     def write_stop(self) -> bool:
         """Stop motion via SportClient.StopMove(). Leaves robot standing."""
         session = self._get_session()
-        try:
-            with session.lock:
-                session.client.StopMove()
-            return True
-        except Exception as e:
-            logger.error(f"[Go2] Error stopping: {e}")
-            return False
+        with session.lock:
+            session.client.StopMove()
+        return True
 
     def write_enable(self, enable: bool) -> bool:
         """Enable/disable velocity command path.
@@ -426,15 +416,10 @@ class UnitreeGo2TwistAdapter:
         """Return the current MotionSwitcher mode name, or None on RPC fail.
 
         Wraps MotionSwitcher.CheckMode(). Empty string means no controller
-        active; None means the RPC itself failed (usually 3102).
+        active; None means the RPC returned a non-zero code or non-dict data.
         """
         session = self._get_session()
-        try:
-            code, data = session.motion_switcher.CheckMode()
-        except Exception as e:
-            logger.warning(f"[Go2] CheckMode failed: {e}")
-            return None
-
+        code, data = session.motion_switcher.CheckMode()
         if code == 0 and isinstance(data, dict):
             return (data.get("name") or "").strip()
         return None
@@ -449,7 +434,7 @@ class UnitreeGo2TwistAdapter:
         with session.lock:
             return session.latest_state
 
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, Any]:
         """One-shot snapshot of adapter + robot state.
 
         Returns:
@@ -485,11 +470,8 @@ class UnitreeGo2TwistAdapter:
                 "sport_mode_num": None,
             }
 
-        # Current mode via MotionSwitcher (cheap RPC; tolerate failure).
-        try:
-            mode = self.check_mode()
-        except Exception:
-            mode = None
+        # check_mode already returns None on RPC failure — no try needed.
+        mode = self.check_mode()
 
         # Snapshot state under session lock.
         with session.lock:
@@ -517,7 +499,7 @@ class UnitreeGo2TwistAdapter:
                 ]
                 body_height = float(state.body_height)
                 sport_mode_num = int(state.mode)
-            except Exception:
+            except (AttributeError, IndexError, TypeError, ValueError):
                 pass
 
         return {
@@ -564,22 +546,16 @@ class UnitreeGo2TwistAdapter:
     def set_speed_level(self, level: int) -> bool:
         """Set the SportClient speed envelope at runtime.
 
-        Go2 SDK convention: -1 = slow, 0 = normal, 1 = fast (max).
-        Observed to return 0 on mcf firmware but the runtime effect is
-        unverified — Rage Mode's envelope (_RAGE_UP_VX etc.) is the
-        source of truth when Rage is active. Updates self._speed_level
-        so subsequent _initialize_locomotion() calls apply the same
-        level.
+        Go2 SDK convention: -1 = slow, 0 = normal, 1 = fast (max). When
+        Rage is active, the Rage envelope (_RAGE_UP_VX etc.) applies
+        instead. Updates self._speed_level so subsequent
+        _initialize_locomotion() calls apply the same level.
 
         Returns True if the RPC returned 0.
         """
         session = self._get_session()
-        try:
-            with session.lock:
-                ret = session.client.SpeedLevel(level)
-        except Exception as e:
-            logger.error(f"[Go2] SpeedLevel raised: {e}")
-            return False
+        with session.lock:
+            ret = session.client.SpeedLevel(level)
 
         if ret != 0:
             logger.warning(f"[Go2] SpeedLevel({level}) returned {ret}")
@@ -628,14 +604,11 @@ class UnitreeGo2TwistAdapter:
         if session.rage_active == enable:
             return True
 
-        try:
-            with session.lock:
-                ret = session.client.BalanceStand()
-            if ret != 0:
-                logger.warning(f"[Go2] BalanceStand before rage toggle returned {ret}")
-            time.sleep(0.3)
-        except Exception as e:
-            logger.warning(f"[Go2] BalanceStand raised before rage toggle: {e}")
+        with session.lock:
+            ret = session.client.BalanceStand()
+        if ret != 0:
+            logger.warning(f"[Go2] BalanceStand before rage toggle returned {ret}")
+        time.sleep(0.3)
 
         if not self._call_sport_api(self._SPORT_API_ID_RAGEMODE, {"data": enable}):
             return False
@@ -643,20 +616,14 @@ class UnitreeGo2TwistAdapter:
         if enable:
             time.sleep(2.0)  # let FsmRageMode transition settle
             self._start_rage_joystick(session)
-            try:
-                with session.lock:
-                    sj_ret = session.client.SwitchJoystick(True)
-                if sj_ret != 0:
-                    logger.warning(f"[Go2] SwitchJoystick(True) after rage returned {sj_ret}")
-            except Exception as e:
-                logger.warning(f"[Go2] SwitchJoystick raised after rage enable: {e}")
+            with session.lock:
+                sj_ret = session.client.SwitchJoystick(True)
+            if sj_ret != 0:
+                logger.warning(f"[Go2] SwitchJoystick(True) after rage returned {sj_ret}")
         else:
             self._stop_rage_joystick(session)
-            try:
-                with session.lock:
-                    session.client.SwitchJoystick(False)
-            except Exception:
-                pass
+            with session.lock:
+                session.client.SwitchJoystick(False)
 
         logger.info(f"[Go2] ✓ Rage Mode {'enabled' if enable else 'disabled'}")
         return True
@@ -665,13 +632,9 @@ class UnitreeGo2TwistAdapter:
         """Create the WirelessController publisher and spawn the 100Hz thread."""
         if session.rage_pub is not None:
             return
-        try:
-            pub = ChannelPublisher("rt/wirelesscontroller_unprocessed", WirelessController_)
-            pub.Init()
-            session.rage_pub = pub
-        except Exception as e:
-            logger.error(f"[Go2] Failed to init rage joystick publisher: {e}")
-            return
+        pub = ChannelPublisher("rt/wirelesscontroller_unprocessed", WirelessController_)
+        pub.Init()
+        session.rage_pub = pub
 
         session.rage_stop = threading.Event()
         session.rage_cmd = (0.0, 0.0, 0.0)
@@ -730,11 +693,11 @@ class UnitreeGo2TwistAdapter:
 
             try:
                 pub.Write(msg)
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 logger.warning(f"[Go2] Rage joystick publish raised: {e}")
                 return
 
-    def _call_sport_api(self, api_id: int, payload: dict | None = None) -> bool:
+    def _call_sport_api(self, api_id: int, payload: dict[str, Any] | None = None) -> bool:
         """Generic escape hatch for undocumented mcf sport API IDs.
 
         SportClient's internal dispatcher rejects unregistered api_ids
@@ -747,13 +710,9 @@ class UnitreeGo2TwistAdapter:
         """
         session = self._get_session()
         body = json.dumps(payload or {})
-        try:
-            with session.lock:
-                session.client._RegistApi(api_id, 0)
-                code, data = session.client._Call(api_id, body)
-        except Exception as e:
-            logger.error(f"[Go2] _Call({api_id}, {body}) raised: {e}")
-            return False
+        with session.lock:
+            session.client._RegistApi(api_id, 0)
+            code, data = session.client._Call(api_id, body)
 
         if code != 0:
             logger.warning(f"[Go2] _Call({api_id}, {body}) -> code={code} data={data!r}")
@@ -783,13 +742,7 @@ class UnitreeGo2TwistAdapter:
         remote, close the Unitree app, verify network).
         """
         session = self._get_session()
-
-        try:
-            code, data = session.motion_switcher.CheckMode()
-        except Exception as e:
-            logger.error(f"[Go2] CheckMode raised: {e}")
-            return False
-
+        code, data = session.motion_switcher.CheckMode()
         current = (data.get("name") or "").strip() if isinstance(data, dict) else ""
 
         if current:
@@ -814,62 +767,44 @@ class UnitreeGo2TwistAdapter:
         if not self._verify_sport_mode_active():
             return False
 
-        try:
-            logger.info("[Go2] Standing up...")
-            with session.lock:
-                ret = session.client.StandUp()
-            if ret != 0:
-                logger.error(f"[Go2] StandUp failed with code {ret}")
-                return False
-            time.sleep(3)
-
-            logger.info("[Go2] Activating FreeWalk...")
-            with session.lock:
-                ret = session.client.FreeWalk()
-            if ret != 0:
-                logger.error(f"[Go2] FreeWalk failed with code {ret}")
-                return False
-            time.sleep(2)
-
-            # Apply speed profile. Non-fatal if it fails — mcf / ai modes
-            # may ignore SpeedLevel, which is fine; Move() still works.
-            try:
-                with session.lock:
-                    sl_ret = session.client.SpeedLevel(self._speed_level)
-                if sl_ret == 0:
-                    logger.info(f"[Go2] ✓ SpeedLevel({self._speed_level}) applied")
-                else:
-                    logger.warning(
-                        f"[Go2] SpeedLevel({self._speed_level}) returned "
-                        f"{sl_ret} — likely ignored by non-'normal' controller"
-                    )
-            except Exception as e:
-                logger.warning(f"[Go2] SpeedLevel raised (non-fatal): {e}")
-
-            session.locomotion_ready = True
-            logger.info("[Go2] ✓ Locomotion ready")
-            return True
-
-        except Exception as e:
-            logger.error(f"[Go2] _initialize_locomotion error: {e}")
+        logger.info("[Go2] Standing up...")
+        with session.lock:
+            ret = session.client.StandUp()
+        if ret != 0:
+            logger.error(f"[Go2] StandUp failed with code {ret}")
             return False
+        time.sleep(3)
+
+        logger.info("[Go2] Activating FreeWalk...")
+        with session.lock:
+            ret = session.client.FreeWalk()
+        if ret != 0:
+            logger.error(f"[Go2] FreeWalk failed with code {ret}")
+            return False
+        time.sleep(2)
+
+        # SpeedLevel is best-effort — Move() still works if this returns
+        # non-zero. Rage Mode's envelope overrides SpeedLevel when active.
+        with session.lock:
+            sl_ret = session.client.SpeedLevel(self._speed_level)
+        if sl_ret == 0:
+            logger.info(f"[Go2] ✓ SpeedLevel({self._speed_level}) applied")
+        else:
+            logger.warning(f"[Go2] SpeedLevel({self._speed_level}) returned {sl_ret}")
+
+        session.locomotion_ready = True
+        logger.info("[Go2] ✓ Locomotion ready")
+        return True
 
     def _send_velocity(self, vx: float, vy: float, wz: float) -> bool:
-        """Send raw SportClient.Move(vx, vy, wz) under session.lock.
-
-        Returns False on SDK exception or non-zero return code.
-        """
+        """Send raw SportClient.Move(vx, vy, wz) under session.lock."""
         session = self._get_session()
-        try:
-            with session.lock:
-                ret = session.client.Move(vx, vy, wz)
-            if ret != 0:
-                logger.warning(f"[Go2] Move() returned code {ret}")
-                return False
-            return True
-        except Exception as e:
-            logger.error(f"[Go2] _send_velocity error: {e}")
+        with session.lock:
+            ret = session.client.Move(vx, vy, wz)
+        if ret != 0:
+            logger.warning(f"[Go2] Move() returned code {ret}")
             return False
+        return True
 
 
 def register(registry: TwistBaseAdapterRegistry) -> None:

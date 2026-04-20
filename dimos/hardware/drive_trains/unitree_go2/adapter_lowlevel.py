@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import Any
 
 from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
     MotionSwitcherClient,
@@ -132,10 +133,10 @@ class UnitreeGo2LowLevelAdapter:
 
         self._latest_low_state: LowState_ | None = None
         self._cmd: LowCmd_ | None = None
-        self._publisher = None
-        self._subscriber = None
-        self._motion_switcher = None
-        self._crc_helper = None
+        self._publisher: ChannelPublisher | None = None
+        self._subscriber: ChannelSubscriber | None = None
+        self._motion_switcher: MotionSwitcherClient | None = None
+        self._crc_helper: CRC | None = None
 
         # Updated by flush() only. Watchdog uses this to decide if the
         # user is still driving. emergency_damp() intentionally does NOT
@@ -350,21 +351,17 @@ class UnitreeGo2LowLevelAdapter:
         if not self._connected or self._cmd is None or self._publisher is None:
             return False
 
-        try:
-            with self._lock:
-                self._compute_crc(self._cmd)
-                self._publisher.Write(self._cmd)
-            self._last_user_flush_ts = time.monotonic()
-            return True
-        except Exception as e:
-            logger.error(f"[Go2 LowLevel] flush error: {e}")
-            return False
+        with self._lock:
+            self._compute_crc(self._cmd)
+            self._publisher.Write(self._cmd)
+        self._last_user_flush_ts = time.monotonic()
+        return True
 
     # =========================================================================
     # Joint state readout
     # =========================================================================
 
-    def read_joint_state(self) -> dict:
+    def read_joint_state(self) -> dict[str, Any]:
         """Snapshot of the most recent LowState_ message.
 
         Returns:
@@ -383,32 +380,26 @@ class UnitreeGo2LowLevelAdapter:
         if state is None:
             return {}
 
-        try:
-            motors = []
-            for i in range(GO2_NUM_ACTIVE_JOINTS):
-                ms = state.motor_state[i]
-                motors.append(
-                    {
-                        "q": float(ms.q),
-                        "dq": float(ms.dq),
-                        "tau_est": float(ms.tau_est),
-                        "temperature": int(ms.temperature),
-                    }
-                )
-            return {
-                "motors": motors,
-                "imu": {
-                    "quaternion": [float(x) for x in state.imu_state.quaternion],
-                    "gyroscope": [float(x) for x in state.imu_state.gyroscope],
-                    "accelerometer": [float(x) for x in state.imu_state.accelerometer],
-                    "rpy": [float(x) for x in state.imu_state.rpy],
-                },
-                "foot_force": [float(x) for x in state.foot_force],
-                "tick": int(state.tick),
+        motors = [
+            {
+                "q": float(state.motor_state[i].q),
+                "dq": float(state.motor_state[i].dq),
+                "tau_est": float(state.motor_state[i].tau_est),
+                "temperature": int(state.motor_state[i].temperature),
             }
-        except Exception as e:
-            logger.error(f"[Go2 LowLevel] read_joint_state error: {e}")
-            return {}
+            for i in range(GO2_NUM_ACTIVE_JOINTS)
+        ]
+        return {
+            "motors": motors,
+            "imu": {
+                "quaternion": [float(x) for x in state.imu_state.quaternion],
+                "gyroscope": [float(x) for x in state.imu_state.gyroscope],
+                "accelerometer": [float(x) for x in state.imu_state.accelerometer],
+                "rpy": [float(x) for x in state.imu_state.rpy],
+            },
+            "foot_force": [float(x) for x in state.foot_force],
+            "tick": int(state.tick),
+        }
 
     # =========================================================================
     # Safety
@@ -438,23 +429,19 @@ class UnitreeGo2LowLevelAdapter:
             logger.error("[Go2 LowLevel] emergency_damp: no LowState_ yet, cannot hold current q")
             return False
 
-        try:
-            damp_cmd = self._build_lowcmd_defaults()
-            for i in range(GO2_NUM_ACTIVE_JOINTS):
-                m = damp_cmd.motor_cmd[i]
-                m.mode = _MOTOR_MODE_ENABLE
-                m.q = float(state.motor_state[i].q)
-                m.dq = 0.0
-                m.tau = 0.0
-                m.kp = _DAMP_KP
-                m.kd = _DAMP_KD
-            with self._lock:
-                self._compute_crc(damp_cmd)
-                self._publisher.Write(damp_cmd)
-            return True
-        except Exception as e:
-            logger.error(f"[Go2 LowLevel] emergency_damp error: {e}")
-            return False
+        damp_cmd = self._build_lowcmd_defaults()
+        for i in range(GO2_NUM_ACTIVE_JOINTS):
+            m = damp_cmd.motor_cmd[i]
+            m.mode = _MOTOR_MODE_ENABLE
+            m.q = float(state.motor_state[i].q)
+            m.dq = 0.0
+            m.tau = 0.0
+            m.kp = _DAMP_KP
+            m.kd = _DAMP_KD
+        with self._lock:
+            self._compute_crc(damp_cmd)
+            self._publisher.Write(damp_cmd)
+        return True
 
     # =========================================================================
     # Internal
@@ -498,11 +485,7 @@ class UnitreeGo2LowLevelAdapter:
         """
         if self._motion_switcher is None:
             return False
-        try:
-            code, data = self._motion_switcher.CheckMode()
-        except Exception as e:
-            logger.error(f"[Go2 LowLevel] MotionSwitcher CheckMode raised: {e}")
-            return False
+        code, data = self._motion_switcher.CheckMode()
 
         if code == 3102:
             logger.error("[Go2 LowLevel] MotionSwitcher unreachable (3102)")
@@ -535,10 +518,7 @@ class UnitreeGo2LowLevelAdapter:
             with self._state_lock:
                 state = self._latest_low_state
             if state is not None:
-                try:
-                    samples.append([float(x) for x in state.foot_force])
-                except Exception:
-                    pass
+                samples.append([float(x) for x in state.foot_force])
             time.sleep(0.05)
 
         if not samples:
@@ -595,7 +575,7 @@ class UnitreeGo2LowLevelAdapter:
         if self._crc_helper is None:
             self._crc_helper = CRC()
         cmd.crc = self._crc_helper.Crc(cmd)
-        return cmd.crc
+        return int(cmd.crc)
 
     def _watchdog_loop(self) -> None:
         """Background thread body.

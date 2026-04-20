@@ -316,43 +316,32 @@ class UnitreeWebRTCConnection(Resource):
              into FsmRageMode.
           3. SwitchJoystick(enable) — flip FSM's joystick input gate.
 
-        Returns True on success. Failures of step 2 propagate; step 1
-        and step 3 are best-effort.
+        Returns True on success (publish_request raises on transport errors).
         """
-        try:
-            self.publish_request(
-                RTC_TOPIC["SPORT_MOD"],
-                {"api_id": SPORT_CMD["BalanceStand"]},
-            )
-        except Exception as e:
-            print(f"[Go2 WebRTC] BalanceStand before rage toggle raised: {e}")
+        self.publish_request(
+            RTC_TOPIC["SPORT_MOD"],
+            {"api_id": SPORT_CMD["BalanceStand"]},
+        )
         time.sleep(0.3)
 
-        try:
-            resp = self.publish_request(
-                RTC_TOPIC["SPORT_MOD"],
-                {
-                    "api_id": self._SPORT_API_ID_RAGEMODE,
-                    "parameter": {"data": bool(enable)},
-                },
-            )
-        except Exception as e:
-            print(f"[Go2 WebRTC] Rage Mode toggle raised: {e}")
-            return False
+        resp = self.publish_request(
+            RTC_TOPIC["SPORT_MOD"],
+            {
+                "api_id": self._SPORT_API_ID_RAGEMODE,
+                "parameter": {"data": bool(enable)},
+            },
+        )
 
         if enable:
             time.sleep(2.0)
 
-        try:
-            self.publish_request(
-                RTC_TOPIC["SPORT_MOD"],
-                {
-                    "api_id": SPORT_CMD["SwitchJoystick"],
-                    "parameter": {"data": bool(enable)},
-                },
-            )
-        except Exception as e:
-            print(f"[Go2 WebRTC] SwitchJoystick after rage raised: {e}")
+        self.publish_request(
+            RTC_TOPIC["SPORT_MOD"],
+            {
+                "api_id": SPORT_CMD["SwitchJoystick"],
+                "parameter": {"data": bool(enable)},
+            },
+        )
 
         print(f"[Go2 WebRTC] ✓ Rage Mode {'enabled' if enable else 'disabled'} (resp={resp!r})")
         return True
