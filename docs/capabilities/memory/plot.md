@@ -251,31 +251,9 @@ t= 279.6s score=0.230 prominence=0.030
 
 We got 15 peaks back, we ran a detector on all of them so we can start projecting into 3D but let's say we want some sort of pre-filter of just globally significant peaks. we can see most peaks prominence sits around 0.02–0.03 and only a couple (0.067 at t=37s, 0.047 at t=240s) really stand out. We might want to auto detect those.
 
-`significant()` replaces that guesswork by thresholding on the distribution of prominences itself. Three methods:
+`significant()` replaces that guesswork by thresholding on the distribution of prominences itself. Default outlier detection uses MAD (median absolute deviation).
 
-- `"mad"`  — (default) outlier detection via median absolute deviation. Robust default.
-- `"otsu"` — 1D Otsu, classic bimodal split.
-- `"gap"`  — largest ratio gap between consecutive sorted prominences.
-
-```python session=robotdata
-from dimos.memory2.transform import significant
-
-t0 = plantness_similarity.first().ts
-
-for method in ("mad", "otsu", "gap"):
-    kept = list(semantic_peaks.transform(significant(method=method)))
-    stamps = ", ".join(f"{p.ts - t0:.0f}s" for p in kept)
-    print(f"{method:4s}: kept {len(kept):2d} / 15 → {stamps}")
-```
-
-<!--Result:-->
-```
-mad : kept  2 / 15 → 37s, 240s
-otsu: kept  3 / 15 → 37s, 163s, 240s
-gap : kept  1 / 15 → 37s
-```
-
-Put the surviving MAD peaks on the timeline we get two very obvious plants.
+Once we put the surviving peaks on the timeline we get two very obvious plants.
 
 ```python session=robotdata
 plot = Plot()
@@ -302,9 +280,6 @@ plot.to_svg("assets/plot_plantness_significant.svg")
 
 Rule of thumb: keep a small absolute floor on `peaks(prominence=...)` to
 reject shape-noise, then let `significant()` pick the statistical cutoff.
-MAD is the safe default when you expect a few real peaks in a mostly-noisy
-signal; switch to Otsu if the distribution is visibly bimodal; avoid `gap`
-unless peaks are clearly separated from noise.
 
 ## Semantic peak analysis
 
