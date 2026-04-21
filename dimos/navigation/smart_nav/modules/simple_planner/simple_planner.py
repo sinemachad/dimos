@@ -270,6 +270,11 @@ class SimplePlannerConfig(ModuleConfig):
     # cached path so the local planner never stops on it. Should be
     # larger than LocalPlanner's goal_reached_threshold.
     waypoint_advance_radius: float = 1.0
+    # When the robot is within this distance (m) of the goal, the goal
+    # is considered reached and is internally cancelled.  Prevents the
+    # planner from dragging the robot back to a stale goal if the user
+    # physically repositions it after arrival.
+    goal_reached_threshold: float = 0.5
     # TF child frame for the robot body.  Modules query the TF tree
     # for ``map → body_frame`` (or ``odom → body_frame`` as fallback).
     # Override to ``"sensor"`` for the Unity sim bridge.
@@ -629,6 +634,24 @@ class SimplePlanner(Module):
         mono_now = time.monotonic()
         goal_dist = math.hypot(gx - rx, gy - ry)
         now = time.time()
+
+        # ── Goal reached: clear internally so a repositioned robot
+        # doesn't try to return to a stale goal ────────────────────────
+        if goal_dist < self.config.goal_reached_threshold:
+            with self._lock:
+                self._goal_x = None
+                self._goal_y = None
+                self._cached_path = None
+            self._current_wp = None
+            self._current_wp_is_goal = False
+            self.way_point.publish(PointStamped(ts=now, frame_id="map", x=rx, y=ry, z=rz))
+            self.goal_path.publish(Path(ts=now, frame_id="map", poses=[]))
+            logger.info(
+                "Goal reached — clearing",
+                goal=f"({gx:.2f},{gy:.2f})",
+                dist=round(goal_dist, 2),
+            )
+            return
 
         # ── Waypoint advance: keep the next waypoint ahead of the robot
         # so the local planner never stops on an intermediate waypoint ──
