@@ -67,7 +67,7 @@ Repository = "https://github.com/dimensionalOS/dimos"
 Issues = "https://github.com/dimensionalOS/dimos/issues"
 
 [tool.setuptools.packages.find]
-where = ["."]  
+where = ["."]
 include = ["dimos*"]
 
 [tool.ruff]
@@ -90,7 +90,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=dimos --cov-report=term-missing"
+# removed --cov flags so a plain `pytest` run doesn't require pytest-cov installed
+addopts = "-v"
 
 [tool.coverage.run]
 source = ["dimos"]
