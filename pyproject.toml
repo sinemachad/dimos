@@ -62,7 +62,7 @@ all = [
 dimos = "dimos.cli:app"
 
 [project.urls]
-# Updated URLs to point to my personal fork
+# Personal fork — upstream is dimensionalOS/dimos
 Homepage = "https://github.com/dimensionalOS/dimos"
 Repository = "https://github.com/dimensionalOS/dimos"
 Issues = "https://github.com/dimensionalOS/dimos/issues"
@@ -93,7 +93,8 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 # removed --cov flags so a plain `pytest` run doesn't require pytest-cov installed
 # -s shows print() output during test runs, useful when exploring the codebase
-addopts = "-v -s"
+# --tb=short keeps tracebacks readable without being overwhelming
+addopts = "-v -s --tb=short"
 
 [tool.coverage.run]
 source = ["dimos"]
