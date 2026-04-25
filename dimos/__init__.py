@@ -2,6 +2,9 @@
 
 A modular, extensible framework for building dimensional operating system
 components with Python.
+
+Personal fork: using this to learn the internals and experiment with
+custom component pipelines.
 """
 
 from importlib.metadata import PackageNotFoundError, version
