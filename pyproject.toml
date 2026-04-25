@@ -94,7 +94,8 @@ asyncio_mode = "auto"
 # removed --cov flags so a plain `pytest` run doesn't require pytest-cov installed
 # -s shows print() output during test runs, useful when exploring the codebase
 # --tb=short keeps tracebacks readable without being overwhelming
-addopts = "-v -s --tb=short"
+# --no-header reduces noise in output when running tests frequently during development
+addopts = "-v -s --tb=short --no-header"
 
 [tool.coverage.run]
 source = ["dimos"]
