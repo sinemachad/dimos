@@ -95,7 +95,8 @@ asyncio_mode = "auto"
 # -s shows print() output during test runs, useful when exploring the codebase
 # --tb=short keeps tracebacks readable without being overwhelming
 # --no-header reduces noise in output when running tests frequently during development
-addopts = "-v -s --tb=short --no-header"
+# --durations=10 shows the 10 slowest tests — helpful for spotting bottlenecks while learning the codebase
+addopts = "-v -s --tb=short --no-header --durations=10"
 
 [tool.coverage.run]
 source = ["dimos"]
